@@ -1,86 +1,105 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
-
-#define LEVEL_SHIFTER_OE_PIN 7
-#define LORA_WIRELESS_MODULE_M0_PIN 8
-#define LORA_WIRELESS_MODULE_M1_PIN 9
-#define SOFTWARE_SERIAL_TRANSMIT_PIN 10
-#define SOFTWARE_SERIAL_RECEIVE_PIN 11
-#define LORA_WIRELESS_MODULE_AUX_PIN 12
-#define BUFFER_LEN 32
+#include <config.h>
 
 SoftwareSerial softwareSerial(SOFTWARE_SERIAL_RECEIVE_PIN,
                               SOFTWARE_SERIAL_TRANSMIT_PIN);
+
 uint8_t buffer[BUFFER_LEN];
 
-/**
- * @brief Arduino setup() function.
- */
 void setup() {
-  // Configure Arduino pins
-  pinMode(LORA_WIRELESS_MODULE_M0_PIN, OUTPUT);
-  pinMode(LORA_WIRELESS_MODULE_M1_PIN, OUTPUT);
-  pinMode(LORA_WIRELESS_MODULE_AUX_PIN, INPUT);
-  pinMode(SOFTWARE_SERIAL_RECEIVE_PIN, INPUT);
-  pinMode(SOFTWARE_SERIAL_TRANSMIT_PIN, OUTPUT);
-  pinMode(LEVEL_SHIFTER_OE_PIN, OUTPUT);
+    // Configure Arduino pins
+    pinMode(LORA_WIRELESS_MODULE_M0_PIN, OUTPUT);
+    pinMode(LORA_WIRELESS_MODULE_M1_PIN, OUTPUT);
+    pinMode(LORA_WIRELESS_MODULE_AUX_PIN, INPUT);
+    pinMode(SOFTWARE_SERIAL_RECEIVE_PIN, INPUT_PULLUP);
+    pinMode(SOFTWARE_SERIAL_TRANSMIT_PIN, OUTPUT);
+    pinMode(LEVEL_SHIFTER_OE_PIN, OUTPUT);
+    pinMode(LED_BUILTIN, OUTPUT);
 
-  // Put Lora Wireless Module in configuration mode (mode 3)
-  digitalWrite(LORA_WIRELESS_MODULE_M0_PIN, HIGH);
-  digitalWrite(LORA_WIRELESS_MODULE_M1_PIN, HIGH);
-  digitalWrite(LEVEL_SHIFTER_OE_PIN, HIGH);
+    // Put LoRa Wireless Module in configuration mode (mode 3)
+    digitalWrite(LORA_WIRELESS_MODULE_M0_PIN, HIGH);
+    digitalWrite(LORA_WIRELESS_MODULE_M1_PIN, HIGH);
+    digitalWrite(LEVEL_SHIFTER_OE_PIN, HIGH);
 
-  // Configure serial communication
-  softwareSerial.begin(9600);
-  Serial.begin(9600);
+    // Configure serial ports
+    softwareSerial.begin(9600);
+    Serial.begin(9600);
 
-  // Wait Lora WiFi Module initialization
-  delay(2000);
+    // Wait LoRa Wireless Module initialization
+    delay(2000);
 
-  // Configure Lora Wifi Module
-  uint8_t configCommand[] = {
-      0xC0, /* Command: set register */
-      0x00, /* Starting address */
-      0x06, /* Length */
+    // Configure LoRa Wireless Module
+//    uint8_t commandBytes[] = {
+//        0xC0, /* Command: set register */
+//        0x00, /* Starting address */
+//        0x06, /* Length */
+//
+//        0x01, /* High byte of module address */
+//        0x01, /* Low byte of module address */
+//
+//        0x62, /* UART userStream port rate: 9600
+//                    * Serial parity bit: 8N1
+//                    * Air data rate: 2.4 Kbps */
+//
+//        0x00, /* Sub-Packet setting: 200 bytes
+//                    * RSSI ambient noise: disable
+//                    * Transmitting power: 22 dBm */
+//
+//        0x17, /* Channel: 873.125 MHz */
+//
+//        0x03, /* RSSI byte: disable
+//                    * Transmission method: transparent
+//                    * LTB: disable
+//                    * WOR cycle: 1500 ms */
+//    };
 
-      0x01, /* High byte of module address */
-      0x01, /* Low byte of module address */
+    uint8_t commandBytes[] = {0xC1, 0x00, 0x08};
+    const int commandSize = sizeof commandBytes / sizeof commandBytes[0];
+    softwareSerial.write(commandBytes, commandSize);
 
-      0x62, /* UART serial port rate: 9600
-             * Serial parity bit: 8N1
-             * Air data rate: 2.4 Kbps */
+    // Waiting and print LoRa Wireless Module configuration
+    while (softwareSerial.available() == 0) {}
 
-      0x00, /* Sub-Packet setting: 200 bytes
-             * RSSI ambient noise: disable
-             * Transmitting power: 22 dBm */
+    Serial.println("LoRa Wireless Module detected!");
+    Serial.println("Reading configuration...");
 
-      0x17, /* Channel: 873.125 MHz */
+    const int expectedSize = commandSize + commandBytes[2];
+    softwareSerial.readBytes(buffer, expectedSize);
 
-      0x03, /* RSSI byte: disable
-             * Transmission method: transparent
-             * LTB: disable
-             * WOR cycle: 1500 ms */
-  };
-  const int size = sizeof(configCommand) / sizeof(configCommand[0]);
-  softwareSerial.write(configCommand, size);
+    Serial.println();
+    uint8_t *data = buffer + 3;
+    Serial.print(" Address: ");
+    Serial.print(data[0], HEX);
+    Serial.print(' ');
+    Serial.println(data[1], HEX);
+    Serial.print(" Channel: ");
+    Serial.println(data[4], HEX);
+    Serial.println();
+
+    digitalWrite(LORA_WIRELESS_MODULE_M0_PIN, LOW);
+    digitalWrite(LORA_WIRELESS_MODULE_M1_PIN, LOW);
+    Serial.println("LoRa Wireless Module ready, starting loop...");
 }
 
-/**
- * @brief Arduino loop() function.
- */
+
+
 void loop() {
-  int nBytes = softwareSerial.available();
-  if (nBytes > 0) {
-    if (nBytes > BUFFER_LEN) {
-      nBytes = BUFFER_LEN;
+    int nBytes = softwareSerial.available();
+    if (nBytes > 0) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        if (nBytes > BUFFER_LEN) {
+            nBytes = BUFFER_LEN;
+        }
+        softwareSerial.readBytes(buffer, nBytes);
+        for (int i = 0; i < nBytes; ++i) {
+            if (i > 0) {
+                Serial.print(' ');
+            }
+            Serial.print((char) buffer[i]);
+        }
+        Serial.println();
+        digitalWrite(LED_BUILTIN, LOW);
     }
-    softwareSerial.readBytes(buffer, nBytes);
-    for (int i = 0; i < nBytes; ++i) {
-      Serial.print("c[");
-      Serial.print(i);
-      Serial.print("]: ");
-      Serial.println(buffer[i], HEX);
-    }
-  }
-  delay(100);
+    delay(10);
 }
