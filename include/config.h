@@ -8,6 +8,4 @@
 #define SOFTWARE_SERIAL_RECEIVE_PIN 11
 #define LORA_WIRELESS_MODULE_AUX_PIN 12
 
-#define BUFFER_LEN 32
-
 #endif // __CONFIG__H__
