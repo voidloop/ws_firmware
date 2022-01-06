@@ -25,7 +25,7 @@ void test_software_serial_receive_pin_number() {
 }
 
 void test_lora_wireless_module_aux_pin_number() {
-    TEST_ASSERT_EQUAL(12, LORA_WIRELESS_MODULE_AUX_PIN);
+    TEST_ASSERT_EQUAL(2, LORA_WIRELESS_MODULE_AUX_PIN);
 }
 
 void test_buffer_length() {
@@ -88,3 +88,32 @@ void setup() {
 void loop() {
     UNITY_END(); // stop unit testing
 }
+
+
+//void configure() {
+//    uint8_t commandBytes[] = {
+//            0xC0, /* Command: set register */
+//            0x00, /* Starting address */
+//            0x06, /* Length */
+//
+//            0x00, /* High byte of module address */
+//            0x00, /* Low byte of module address */
+//
+//            0x62, /* UART userStream port rate: 9600
+//                   * Serial parity bit: 8N1
+//                   * Air data rate: 2.4 Kbps */
+//
+//            0x00, /* Sub-Packet setting: 200 bytes
+//                   * RSSI ambient noise: disable
+//                   * Transmitting power: 22 dBm */
+//
+//            0x17, /* Channel: 873.125 MHz */
+//
+//            0x03, /* RSSI byte: disable
+//                   * Transmission method: transparent
+//                   * LTB: disable
+//                   * WOR cycle: 1500 ms */
+//    };
+//    const int commandSize = sizeof commandBytes / sizeof commandBytes[0];
+//    softwareSerial.write(commandBytes, commandSize);
+//}
