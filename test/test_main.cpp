@@ -48,22 +48,27 @@ void test_TestStream_class() {
 
 
 void test_StreamReader_class() {
-    const int streamReaderSize = 13;
+    const int streamReaderSize = 12;
     TestStream commandStream("TEST");
     StreamReader<streamReaderSize> streamReader(commandStream);
-    TEST_ASSERT_EQUAL(LINE_UNAVAILABLE, streamReader.read());
+    TEST_ASSERT_EQUAL(false, streamReader.available());
 
     commandStream.print("\r\n");
-    TEST_ASSERT_EQUAL(LINE_AVAILABLE, streamReader.read());
+
+    TEST_ASSERT_EQUAL(true, streamReader.available());
     TEST_ASSERT_EQUAL(0, commandStream.available());
 
-    String command = streamReader.getString();
+    String command = streamReader.readline();
+
     TEST_ASSERT_EQUAL_STRING("TEST", command.c_str());
 
-    commandStream.print("THIS STRING IS TOO LONG!!!!\r\nTHIS IS GOOD\r\n");
-    TEST_ASSERT_EQUAL(BUFFER_LIMIT_EXCEEDED, streamReader.read());
-    TEST_ASSERT_EQUAL(LINE_AVAILABLE, streamReader.read());
-    TEST_ASSERT_EQUAL(streamReaderSize - 1, streamReader.getString().length());
+    commandStream.print("THIS STRING IS TOO LONG!!!!\r\n012345678912\r\n");
+    TEST_ASSERT_EQUAL(true, streamReader.available());
+    TEST_ASSERT_EQUAL(true, streamReader.isBufferOverflow());
+    TEST_ASSERT_EQUAL_STRING("THIS STRING ", streamReader.readline().c_str());
+    TEST_ASSERT_EQUAL(true, streamReader.available());
+    TEST_ASSERT_EQUAL(false, streamReader.isBufferOverflow());
+    TEST_ASSERT_EQUAL(streamReaderSize, streamReader.readline().length());
 }
 
 

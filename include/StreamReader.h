@@ -1,76 +1,62 @@
 #ifndef __COMMAND_PARSER__H__
 #define __COMMAND_PARSER__H__
 
-#define LINE_AVAILABLE 1
-#define LINE_UNAVAILABLE 0
-#define BUFFER_LIMIT_EXCEEDED -1
-
-template<int SIZE>
+template<size_t SIZE>
 class StreamReader {
 public:
-    explicit StreamReader(Stream&);
+    explicit StreamReader(Stream &);
 
-    int read();
+    bool available();
 
-    String getString() {
-        status = LINE_UNAVAILABLE;
+    String readline() {
+        reset();
         return {buffer};
     }
 
-    int getStatus() {
-        return status;
+    // this function must be called before readline
+    bool isBufferOverflow() {
+        return overflow;
     }
 
 private:
     Stream &stream;
-    int status;
-    char buffer[SIZE];
-    int idx;
-    bool discard;
+    char buffer[SIZE + 1];
+    size_t idx;
+    bool overflow;
+    bool isLastCr;
+    bool avail;
+
+    void reset() {
+        overflow = false;
+        avail = false;
+        idx = 0;
+    }
 };
 
-template<int SIZE>
+template<size_t SIZE>
 StreamReader<SIZE>::StreamReader(Stream &s) :
-        stream(s), status(LINE_UNAVAILABLE), buffer(),
-        idx(0), discard(false) {
+        stream(s), buffer(), idx(0), overflow(false),
+        isLastCr(false), avail(false) {
+    static_assert(SIZE > 0, "Buffer length must be greater than 0");
 }
 
-template<int SIZE>
-int StreamReader<SIZE>::read() {
-    if (status == LINE_AVAILABLE) {
-        return LINE_AVAILABLE;
-    }
-
-    while (stream.available() > 0) {
+template<size_t SIZE>
+bool StreamReader<SIZE>::available() {
+    while (!avail && stream.available() > 0) {
         char c = static_cast<char>(stream.read());
-        // stop condition
-        if (c == '\n' && idx > 0 && buffer[idx - 1] == '\r') {
-            if (discard) {
-                discard = false;
-                status = BUFFER_LIMIT_EXCEEDED;
+        if (c == '\n' && isLastCr) {
+            buffer[idx - 1] = '\0';
+            avail = true;
+        } else if (!overflow) {
+            if (idx < SIZE + 1) {
+                buffer[idx++] = c;
             } else {
-                buffer[this->idx - 1] = '\0';
-                status = LINE_AVAILABLE;
+                overflow = true;
             }
-            idx = 0;
-            return status;
-        } else if (!discard) {
-            if (idx < SIZE) {
-                buffer[idx] = c;
-                idx++;
-            } else {
-                discard = true;
-                buffer[0] = c;
-                idx = 1;
-
-            }
-        } else {
-            // discard mode records only last char
-            buffer[0] = c;
         }
+        isLastCr = c == '\r';
     }
-
-    return LINE_UNAVAILABLE;
+    return avail;
 }
 
 #endif // __COMMAND_PARSER__H__
