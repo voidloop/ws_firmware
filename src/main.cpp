@@ -1,5 +1,5 @@
 #include <Arduino.h>
-//#include <Arduino_JSON.h>
+#include <Arduino_JSON.h>
 #include <SoftwareSerial.h>
 
 #include "config.h"
@@ -38,7 +38,7 @@ void switchNormalMode() {
     Serial.println("Done");
 }
 
-void printResponse(const uint8_t buffer[], const size_t bufferSize) {
+void printModuleResponse(const uint8_t buffer[], const size_t bufferSize) {
     for (size_t i = 0; i < bufferSize; ++i) {
         if (i > 0) {
             Serial.print(' ');
@@ -61,7 +61,7 @@ void readConfig() {
 
     softwareSerial.write(buffer, commandSize);
     softwareSerial.readBytes(buffer, bufferSize);
-    printResponse(buffer, bufferSize);
+    printModuleResponse(buffer, bufferSize);
 
     const uint8_t *payload = &buffer[3];
     const uint8_t *expected = &configCommand[3];
@@ -88,7 +88,7 @@ void writeConfig() {
 
     softwareSerial.write(configCommand, bufferSize);
     softwareSerial.readBytes(buffer, bufferSize);
-    printResponse(buffer, bufferSize - 2);
+    printModuleResponse(buffer, bufferSize - 2);
 
     waitUntilBusy();
 
@@ -102,6 +102,7 @@ void setup() {
     pinMode(SERIAL_RX_PIN, INPUT);
     pinMode(SERIAL_TX_PIN, OUTPUT);
     pinMode(LEVEL_SHIFTER_OE_PIN, OUTPUT);
+
     digitalWrite(LEVEL_SHIFTER_OE_PIN, HIGH);
 
     Serial.begin(9600);
@@ -109,41 +110,55 @@ void setup() {
 
     readConfig();
 
-    Serial.println("Ready");
+    Serial.println("Ready!");
 }
 
-//void processCommand(String &command) {
-//    command.toUpperCase();
-//    Serial.print("Command: ");
-//    Serial.println(command);
-//
-//    if (command.equals("STATUS")) {
-//        JSONVar jsonObj;
-//        jsonObj["wind_speed"] = 0;
-//        jsonObj["wind_direction"] = "NNE";
-//        jsonObj["temperature"] = 0;
-//        jsonObj["humidity"] = 0;
-//
-//        String jsonString = JSON.stringify(jsonObj);
-//        softwareSerial.print(jsonString + "\r\n");
-//    } else {
-//        Serial.println("Error: Command unknown");
-//    }
-//}
-
-void processWirelessCommand(const String &command) {
-
+String statusCommand() {
+    JSONVar jsonObj;
+    jsonObj["wind_speed"] = 0;
+    jsonObj["wind_direction"] = "NNE";
+    jsonObj["temperature"] = 0;
+    jsonObj["humidity"] = 0;
+    return JSON.stringify(jsonObj);
 }
 
-void processUserCommand(const String &command) {
+String echo(const String &command) {
+    JSONVar jsonObj;
+    jsonObj["echo"] = command;
+    return JSON.stringify(jsonObj);
+}
+
+void wirelessCommand(const String &command) {
+    if (command.length() == 0) {
+        return;
+    }
+
+    Serial.println("Wireless command: " + command);
+
+    String response = echo(command);
+    if (command.equals("STATUS")) {
+        response = statusCommand();
+    }
+
+    waitUntilBusy();
+    softwareSerial.print("\x01\x01\x17" + response + "\r\n");
+    Serial.println("Response sent");
+    waitUntilBusy();
+}
+
+void userCommand(const String &command) {
     if (command.length() == 0) {
         Serial.println("Ready!");
-    } else if (command.equals("INIT")) {
+        return;
+    }
+
+    Serial.println("User command: " + command);
+    if (command.equals("INIT")) {
         writeConfig();
     } else if (command.equals("READ")) {
         readConfig();
     } else {
-        Serial.println("Error: Unknown command '" + command + "'");
+        Serial.println("Error: Unknown command");
     }
 }
 
@@ -152,9 +167,11 @@ void processInput(StreamReader<MAX_COMMAND_LEN> &streamReader,
     if (streamReader.available()) {
         if (streamReader.isBufferOverflow()) {
             Serial.println("Error: Buffer limit exceeded");
+            streamReader.reset();
         } else {
             String command = streamReader.readline();
             command.toUpperCase();
+            command.trim();
             commandFunc(command);
         }
     }
@@ -171,6 +188,6 @@ void loop() {
 //    if (millis() - lastActivityDetected > 5000) {
 //        // sleep
 //    }
-    processInput(userStreamReader, processUserCommand);
-    processInput(wirelessStreamReader, processWirelessCommand);
+    processInput(userStreamReader, userCommand);
+    processInput(wirelessStreamReader, wirelessCommand);
 }

@@ -18,6 +18,12 @@ public:
         return overflow;
     }
 
+    void reset() {
+        overflow = false;
+        avail = false;
+        idx = 0;
+    }
+
 private:
     Stream &stream;
     char buffer[SIZE + 1];
@@ -26,11 +32,6 @@ private:
     bool isLastCr;
     bool avail;
 
-    void reset() {
-        overflow = false;
-        avail = false;
-        idx = 0;
-    }
 };
 
 template<size_t SIZE>
