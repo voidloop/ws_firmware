@@ -93,30 +93,30 @@ void loop() {
 }
 
 
-//void configure() {
-//    uint8_t commandBytes[] = {
-//            0xC0, /* Command: set register */
-//            0x00, /* Starting address */
-//            0x06, /* Length */
+// EXPERIMENTAL CODE
+//            String line = streamReader.readline();
+//            LinkedList<String> args;
 //
-//            0x00, /* High byte of module address */
-//            0x00, /* Low byte of module address */
+//            int start = 0;
+//            while (true) {
+//                char c = line.charAt(start);
+//                while (c == ' ') {
+//                    start++;
+//                    c = line.charAt(start);
+//                }
+//                if (c == '\0') {
+//                    break;
+//                }
+//                int end = line.indexOf(' ', start);
+//                if (end == -1) {
+//                    args.add(line.substring(start));
+//                    break;
+//                } else {
+//                    args.add(line.substring(start, end));
+//                    start = end;
+//                }
+//            }
 //
-//            0x62, /* UART userStream port rate: 9600
-//                   * Serial parity bit: 8N1
-//                   * Air data rate: 2.4 Kbps */
-//
-//            0x00, /* Sub-Packet setting: 200 bytes
-//                   * RSSI ambient noise: disable
-//                   * Transmitting power: 22 dBm */
-//
-//            0x17, /* Channel: 873.125 MHz */
-//
-//            0x03, /* RSSI byte: disable
-//                   * Transmission method: transparent
-//                   * LTB: disable
-//                   * WOR cycle: 1500 ms */
-//    };
-//    const int commandSize = sizeof commandBytes / sizeof commandBytes[0];
-//    softwareSerial.write(commandBytes, commandSize);
-//}
+//            if (args.size() > 0) {
+//                args[0].toUpperCase();
+//            }

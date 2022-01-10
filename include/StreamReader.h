@@ -37,7 +37,6 @@ template<size_t SIZE>
 StreamReader<SIZE>::StreamReader(Stream &s) :
         stream(s), buffer(), idx(0), overflow(false),
         isLastCr(false), avail(false) {
-    static_assert(SIZE > 0, "Buffer length must be greater than 0");
 }
 
 template<size_t SIZE>

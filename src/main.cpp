@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <Arduino_JSON.h>
+//#include <Arduino_JSON.h>
 #include <SoftwareSerial.h>
 
 #include "config.h"
@@ -12,6 +12,9 @@ auto userStreamReader = StreamReader<MAX_COMMAND_LEN>(Serial);
 
 void waitUntilBusy() {
     while (digitalRead(LORA_MODULE_AUX_PIN) == LOW);
+    // Datasheet: the general recommendation is to detect the output state of the AUX
+    // pin and switch after 2ms when the output is high.
+    // Increase this delay if the LoRa module doesn't save or read the config correctly.
     delay(50);
 }
 
@@ -60,6 +63,16 @@ void readConfig() {
     softwareSerial.readBytes(buffer, bufferSize);
     printResponse(buffer, bufferSize);
 
+    const uint8_t *payload = &buffer[3];
+    const uint8_t *expected = &configCommand[3];
+
+    for (size_t i = 0; i < payloadSize; ++i) {
+        if (payload[i] != expected[i]) {
+            Serial.println("Warning: The LoRa module is not configured properly");
+            break;
+        }
+    }
+
     waitUntilBusy();
 
     switchNormalMode();
@@ -70,35 +83,12 @@ void writeConfig() {
 
     switchConfigMode();
 
-    uint8_t buffer[] = {
-            0xC0, /* Command: set register */
-            0x00, /* Starting address */
-            0x08, /* Length */
+    const size_t bufferSize = sizeof configCommand / sizeof configCommand[0];
+    uint8_t buffer[bufferSize];
 
-            0x00, /* Address high byte */
-            0x00, /* Address low byte */
-
-            0x62, /* UART: 9600,8,N,1 */
-
-            0x00, /* Sub-Packet setting: 200 bytes
-                   * RSSI ambient noise: disable
-                   * Transmitting power: 22 dBm */
-
-            0x17, /* Channel: 873.125 MHz */
-
-            0x63, /* RSSI byte: disable
-                   * Transmission method: fixed
-                   * LTB: disable
-                   * WOR cycle: 1500 ms */
-            0x00, /* Key high byte */
-            0x00  /* Key low byte */
-    };
-
-    const size_t bufferSize = sizeof buffer / sizeof buffer[0];
-
-    softwareSerial.write(buffer, bufferSize);
+    softwareSerial.write(configCommand, bufferSize);
     softwareSerial.readBytes(buffer, bufferSize);
-    printResponse(buffer, bufferSize);
+    printResponse(buffer, bufferSize - 2);
 
     waitUntilBusy();
 
@@ -117,31 +107,29 @@ void setup() {
     Serial.begin(9600);
     softwareSerial.begin(9600);
 
-    waitUntilBusy();
-
     readConfig();
 
     Serial.println("Ready");
 }
 
-void processCommand(String &command) {
-    command.toUpperCase();
-    Serial.print("Command: ");
-    Serial.println(command);
-
-    if (command.equals("STATUS")) {
-        JSONVar jsonObj;
-        jsonObj["wind_speed"] = 0;
-        jsonObj["wind_direction"] = "NNE";
-        jsonObj["temperature"] = 0;
-        jsonObj["humidity"] = 0;
-
-        String jsonString = JSON.stringify(jsonObj);
-        softwareSerial.print(jsonString + "\r\n");
-    } else {
-        Serial.println("Error: Command unknown");
-    }
-}
+//void processCommand(String &command) {
+//    command.toUpperCase();
+//    Serial.print("Command: ");
+//    Serial.println(command);
+//
+//    if (command.equals("STATUS")) {
+//        JSONVar jsonObj;
+//        jsonObj["wind_speed"] = 0;
+//        jsonObj["wind_direction"] = "NNE";
+//        jsonObj["temperature"] = 0;
+//        jsonObj["humidity"] = 0;
+//
+//        String jsonString = JSON.stringify(jsonObj);
+//        softwareSerial.print(jsonString + "\r\n");
+//    } else {
+//        Serial.println("Error: Command unknown");
+//    }
+//}
 
 void processWirelessCommand(const String &command) {
 
@@ -152,14 +140,15 @@ void processUserCommand(const String &command) {
         Serial.println("Ready!");
     } else if (command.equals("INIT")) {
         writeConfig();
-    } else if (command.equals("CONFIG")) {
+    } else if (command.equals("READ")) {
         readConfig();
     } else {
         Serial.println("Error: Unknown command '" + command + "'");
     }
 }
 
-void processInput(StreamReader<MAX_COMMAND_LEN> &streamReader, void (*commandFunc)(const String &)) {
+void processInput(StreamReader<MAX_COMMAND_LEN> &streamReader,
+                  void (*commandFunc)(const String &)) {
     if (streamReader.available()) {
         if (streamReader.isBufferOverflow()) {
             Serial.println("Error: Buffer limit exceeded");
