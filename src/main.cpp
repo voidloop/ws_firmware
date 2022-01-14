@@ -1,193 +1,104 @@
 #include <Arduino.h>
-#include <Arduino_JSON.h>
 #include <SoftwareSerial.h>
+#include <SafeStringReader.h>
+#include <BufferedOutput.h>
+#include <ArduinoJson.h>
 
 #include "config.h"
-#include "StreamReader.h"
+#include "module.h"
 
-auto softwareSerial = SoftwareSerial(SERIAL_RX_PIN, SERIAL_TX_PIN);
-auto wirelessStreamReader = StreamReader<MAX_COMMAND_LEN>(softwareSerial);
-// NOLINTNEXTLINE(cppcoreguidelines-interfaces-global-init)
-auto userStreamReader = StreamReader<MAX_COMMAND_LEN>(Serial);
+createSafeStringReader(userReader, 32, "\r\n")
+createBufferedOutput(userOut, 66, DROP_UNTIL_EMPTY)
 
-void waitUntilBusy() {
-    while (digitalRead(LORA_MODULE_AUX_PIN) == LOW);
-    // Datasheet: the general recommendation is to detect the output state of the AUX
-    // pin and switch after 2ms when the output is high.
-    // Increase this delay if the LoRa module doesn't save or read the config correctly.
-    delay(50);
-}
+createSafeStringReader(moduleReader, 64, "\r\n")
+createBufferedOutput(moduleOut, 66, BLOCK_IF_FULL)
 
-void switchConfigMode() {
-    Serial.print("Mode Switching: Configuration mode (3)... ");
+SoftwareSerial moduleSerial(LORA_MODULE_RX_PIN, LORA_MODULE_TX_PIN);
 
-    digitalWrite(LORA_MODULE_M0_PIN, HIGH);
-    digitalWrite(LORA_MODULE_M1_PIN, HIGH);
-    waitUntilBusy();
-
-    Serial.println("Done");
-}
-
-void switchNormalMode() {
-    Serial.print("Mode switching: Normal mode (0)... ");
-
-    digitalWrite(LORA_MODULE_M0_PIN, LOW);
-    digitalWrite(LORA_MODULE_M1_PIN, LOW);
-    waitUntilBusy();
-
-    Serial.println("Done");
-}
-
-void printModuleResponse(const uint8_t buffer[], const size_t bufferSize) {
-    for (size_t i = 0; i < bufferSize; ++i) {
-        if (i > 0) {
-            Serial.print(' ');
-        }
-        Serial.print("0x");
-        Serial.print(buffer[i], HEX);
-    }
-    Serial.println();
-}
-
-void readConfig() {
-    Serial.println("Reading LoRa module configuration...");
-
-    switchConfigMode();
-
-    const size_t commandSize = 3;
-    const size_t payloadSize = 6;
-    const size_t bufferSize = commandSize + payloadSize;
-    uint8_t buffer[bufferSize] = {0xC1, 0x0, payloadSize};
-
-    softwareSerial.write(buffer, commandSize);
-    softwareSerial.readBytes(buffer, bufferSize);
-    printModuleResponse(buffer, bufferSize);
-
-    const uint8_t *payload = &buffer[3];
-    const uint8_t *expected = &configCommand[3];
-
-    for (size_t i = 0; i < payloadSize; ++i) {
-        if (payload[i] != expected[i]) {
-            Serial.println("Warning: The LoRa module is not configured properly");
-            break;
-        }
-    }
-
-    waitUntilBusy();
-
-    switchNormalMode();
-}
-
-void writeConfig() {
-    Serial.println("Writing LoRa module configuration...");
-
-    switchConfigMode();
-
-    const size_t bufferSize = sizeof configCommand / sizeof configCommand[0];
-    uint8_t buffer[bufferSize];
-
-    softwareSerial.write(configCommand, bufferSize);
-    softwareSerial.readBytes(buffer, bufferSize);
-    printModuleResponse(buffer, bufferSize - 2);
-
-    waitUntilBusy();
-
-    switchNormalMode();
-}
 
 void setup() {
     pinMode(LORA_MODULE_M0_PIN, OUTPUT);
     pinMode(LORA_MODULE_M1_PIN, OUTPUT);
     pinMode(LORA_MODULE_AUX_PIN, INPUT);
-    pinMode(SERIAL_RX_PIN, INPUT);
-    pinMode(SERIAL_TX_PIN, OUTPUT);
     pinMode(LEVEL_SHIFTER_OE_PIN, OUTPUT);
-
     digitalWrite(LEVEL_SHIFTER_OE_PIN, HIGH);
 
     Serial.begin(9600);
-    softwareSerial.begin(9600);
+    SafeString::setOutput(Serial); // DEBUG
 
-    readConfig();
+    userReader.connect(Serial);
+    userOut.connect(Serial);
 
-    Serial.println("Ready!");
+    moduleSerial.begin(9600);
+    readLoRaModuleConfig();
+
+    moduleOut.connect(moduleSerial, 9600);
+    moduleReader.connect(moduleSerial);
+    userOut.flush();
 }
 
-String statusCommand() {
-    JSONVar jsonObj;
-    jsonObj["wind_speed"] = 0;
-    jsonObj["wind_direction"] = "NNE";
-    jsonObj["temperature"] = 0;
-    jsonObj["humidity"] = 0;
-    return JSON.stringify(jsonObj);
+void runStatusCommand(BufferedOutput &output) {
+    StaticJsonDocument<200> doc;
+    doc["hello"] = "world";
+    serializeJson(doc, output);
+    output.println();
 }
 
-String echo(const String &command) {
-    JSONVar jsonObj;
-    jsonObj["echo"] = command;
-    return JSON.stringify(jsonObj);
+inline void errorInvalidCommandSyntax() {
+    userOut.println("Error: Invalid command syntax");
 }
 
-void wirelessCommand(const String &command) {
-    if (command.length() == 0) {
-        return;
-    }
-
-    Serial.println("Wireless command: " + command);
-
-    String response = echo(command);
-    if (command.equals("STATUS")) {
-        response = statusCommand();
-    }
-
-    waitUntilBusy();
-    softwareSerial.print("\x01\x01\x17" + response + "\r\n");
-    Serial.println("Response sent");
-    waitUntilBusy();
+inline void errorUnknownCommand() {
+    userOut.println("Error: Unknown command");
 }
 
-void userCommand(const String &command) {
-    if (command.length() == 0) {
-        Serial.println("Ready!");
-        return;
-    }
+void handleUserCommand() {
+    cSF(command, 11)
+    int idx = 0;
 
-    Serial.println("User command: " + command);
-    if (command.equals("INIT")) {
-        writeConfig();
-    } else if (command.equals("READ")) {
-        readConfig();
-    } else {
-        Serial.println("Error: Unknown command");
-    }
-}
+    idx = userReader.stoken(command, idx, ' ');
+    command.toLowerCase();
 
-void processInput(StreamReader<MAX_COMMAND_LEN> &streamReader,
-                  void (*commandFunc)(const String &)) {
-    if (streamReader.available()) {
-        if (streamReader.isBufferOverflow()) {
-            Serial.println("Error: Buffer limit exceeded");
-            streamReader.reset();
-        } else {
-            String command = streamReader.readline();
-            command.toUpperCase();
-            command.trim();
-            commandFunc(command);
+    if (command.equals("check")) {
+        if (idx != -1) {
+            errorInvalidCommandSyntax();
+            return;
         }
+        readLoRaModuleConfig();
+    } else if (command.equals("init")) {
+        if (idx != -1) {
+            errorInvalidCommandSyntax();
+            return;
+        }
+        writeLoRaModuleConfig();
+    } else if (command.equals("status")) {
+        if (idx != -1) {
+            errorInvalidCommandSyntax();
+            return;
+        }
+        runStatusCommand(userOut);
+    } else {
+        errorUnknownCommand();
     }
 }
 
+void handleModuleCommand() {
+    userOut.println(moduleReader);
+    const uint8_t addr[] = {0x01, 0x01, 0x17};
+    moduleOut.write(addr, 3);
+    runStatusCommand(moduleOut);
+}
+
+void processInput(SafeStringReader &reader, void (&handler)()) {
+    if (reader.read()) {
+        reader.trim();
+        handler();
+    }
+}
 
 void loop() {
-//    // detect LoRa module auxRisingEdgeDetected
-//    if (auxRisingEdgeDetected || (digitalRead(LORA_MODULE_AUX_PIN) == LOW)) {
-//        lastActivityDetected = millis();
-//        auxRisingEdgeDetected = false;
-//    }
-//
-//    if (millis() - lastActivityDetected > 5000) {
-//        // sleep
-//    }
-    processInput(userStreamReader, userCommand);
-    processInput(wirelessStreamReader, wirelessCommand);
+    userOut.nextByteOut();
+    processInput(userReader, handleUserCommand);
+    moduleOut.nextByteOut();
+    processInput(moduleReader, handleModuleCommand);
 }
