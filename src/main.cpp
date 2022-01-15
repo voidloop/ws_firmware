@@ -8,13 +8,12 @@
 #include "module.h"
 
 createSafeStringReader(userReader, 32, "\r\n")
-createBufferedOutput(userOut, 66, DROP_UNTIL_EMPTY)
+createBufferedOutput(userOutput, 66, DROP_UNTIL_EMPTY)
 
-createSafeStringReader(moduleReader, 64, "\r\n")
-createBufferedOutput(moduleOut, 66, BLOCK_IF_FULL)
+createSafeStringReader(loRaReader, 32, "\r\n")
+createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
 
-SoftwareSerial moduleSerial(LORA_MODULE_RX_PIN, LORA_MODULE_TX_PIN);
-
+SoftwareSerial loRaSerial(LORA_MODULE_RX_PIN, LORA_MODULE_TX_PIN);
 
 void setup() {
     pinMode(LORA_MODULE_M0_PIN, OUTPUT);
@@ -24,69 +23,63 @@ void setup() {
     digitalWrite(LEVEL_SHIFTER_OE_PIN, HIGH);
 
     Serial.begin(9600);
+    loRaSerial.begin(9600);
+
     SafeString::setOutput(Serial); // DEBUG
 
     userReader.connect(Serial);
-    userOut.connect(Serial);
+    userOutput.connect(Serial);
 
-    moduleSerial.begin(9600);
-    readLoRaModuleConfig();
+    readModuleConfig();
 
-    moduleOut.connect(moduleSerial, 9600);
-    moduleReader.connect(moduleSerial);
-    userOut.flush();
+    loRaReader.connect(loRaSerial);
+    loRaOutput.connect(loRaSerial, 9600);
+
+    userOutput.flush();
 }
 
-void runStatusCommand(BufferedOutput &output) {
-    StaticJsonDocument<200> doc;
+void statusCommand(BufferedOutput &output) {
+    StaticJsonDocument<100> doc;
     doc["hello"] = "world";
     serializeJson(doc, output);
     output.println();
 }
 
-inline void errorInvalidCommandSyntax() {
-    userOut.println("Error: Invalid command syntax");
+inline void userErrorUnknownCommand() {
+    userOutput.println("Error: Unknown command");
 }
 
-inline void errorUnknownCommand() {
-    userOut.println("Error: Unknown command");
+inline void loRaErrorUnknownCommand() {
+    loRaOutput.println(R"({"error":"Unknown command"})");
 }
 
-void handleUserCommand() {
-    cSF(command, 11)
-    int idx = 0;
-
-    idx = userReader.stoken(command, idx, ' ');
-    command.toLowerCase();
-
-    if (command.equals("check")) {
-        if (idx != -1) {
-            errorInvalidCommandSyntax();
-            return;
-        }
-        readLoRaModuleConfig();
-    } else if (command.equals("init")) {
-        if (idx != -1) {
-            errorInvalidCommandSyntax();
-            return;
-        }
-        writeLoRaModuleConfig();
-    } else if (command.equals("status")) {
-        if (idx != -1) {
-            errorInvalidCommandSyntax();
-            return;
-        }
-        runStatusCommand(userOut);
+void handleUserMessage() {
+    if (userReader.equalsIgnoreCase("check")) {
+        readModuleConfig();
+    } else if (userReader.equalsIgnoreCase("init")) {
+        writeModuleConfig();
+    } else if (userReader.equalsIgnoreCase("status")) {
+        statusCommand(userOutput);
     } else {
-        errorUnknownCommand();
+        userErrorUnknownCommand();
     }
 }
 
-void handleModuleCommand() {
-    userOut.println(moduleReader);
-    const uint8_t addr[] = {0x01, 0x01, 0x17};
-    moduleOut.write(addr, 3);
-    runStatusCommand(moduleOut);
+void handleLoRaMessage() {
+    userOutput.print("Wireless command received: '");
+    userOutput.print(loRaReader);
+    userOutput.println("'");
+
+    const uint8_t target[] = {0x01, 0x01, 0x17};
+    if (loRaReader.equalsIgnoreCase("status")) {
+        loRaOutput.write(target, 3);
+        statusCommand(loRaOutput);
+    } else {
+        loRaOutput.write(target, 3);
+        loRaErrorUnknownCommand();
+    }
+
+    statusCommand(loRaOutput);
 }
 
 void processInput(SafeStringReader &reader, void (&handler)()) {
@@ -97,8 +90,8 @@ void processInput(SafeStringReader &reader, void (&handler)()) {
 }
 
 void loop() {
-    userOut.nextByteOut();
-    processInput(userReader, handleUserCommand);
-    moduleOut.nextByteOut();
-    processInput(moduleReader, handleModuleCommand);
+    userOutput.nextByteOut();
+    processInput(userReader, handleUserMessage);
+    loRaOutput.nextByteOut();
+    processInput(loRaReader, handleLoRaMessage);
 }

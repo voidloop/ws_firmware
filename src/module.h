@@ -1,7 +1,7 @@
 #ifndef MODULE_H
 #define MODULE_H
 
-void readLoRaModuleConfig();
-void writeLoRaModuleConfig();
+void readModuleConfig();
+void writeModuleConfig();
 
 #endif //MODULE_H
