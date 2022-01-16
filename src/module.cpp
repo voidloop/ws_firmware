@@ -7,7 +7,13 @@
 extern BufferedOutput userOutput;
 extern SoftwareSerial loRaSerial;
 
-const uint8_t defaultConfig[] = {
+const size_t commandSize = 3;
+const size_t configSize = 6;
+
+using Config = uint8_t[configSize];
+
+
+const Config defaultConfig = {
         0x10, /* Address high byte */
         0x10, /* Address low byte */
 
@@ -25,12 +31,10 @@ const uint8_t defaultConfig[] = {
                * WOR cycle: 1500 ms */
 };
 
-const size_t commandSize = (sizeof defaultConfig[0]) * 3;
-const size_t payloadSize = (sizeof defaultConfig / sizeof defaultConfig[0]);
 
-void waitModuleTask() {
-    // Flush user output before start a potential endless loop
-    userOutput.flush();
+void waitLoRaTask() {
+    // flush user output before start a potential endless loop
+//    userOutput.flush();
 
     while (digitalRead(LORA_MODULE_AUX_PIN) == LOW);
     // Datasheet: the general recommendation is to detect the output state of the AUX
@@ -42,22 +46,22 @@ void waitModuleTask() {
 void switchConfigMode() {
     digitalWrite(LORA_MODULE_M0_PIN, HIGH);
     digitalWrite(LORA_MODULE_M1_PIN, HIGH);
-    waitModuleTask();
+    waitLoRaTask();
 }
 
 void switchNormalMode() {
     digitalWrite(LORA_MODULE_M0_PIN, LOW);
     digitalWrite(LORA_MODULE_M1_PIN, LOW);
-    waitModuleTask();
+    waitLoRaTask();
 }
 
-void printModuleConfig(const uint8_t buffer[], const size_t bufferSize) {
-    for (size_t i = 0; i < bufferSize; ++i) {
+void printConfig(const Config &config) {
+    for (size_t i = 0; i < configSize; ++i) {
         if (i > 0) {
             userOutput.print(' ');
         }
         userOutput.print("0x");
-        userOutput.print(buffer[i], HEX);
+        userOutput.print(config[i], HEX);
     }
     userOutput.println();
 }
@@ -70,53 +74,53 @@ void flushExtraBytes() {
     }
 }
 
-void writeModuleConfig() {
+void writeLoRaConfig() {
     userOutput.print("Writing LoRa configuration...");
-    userOutput.flush();
 
     switchConfigMode();
     flushExtraBytes();
 
-    const size_t bufferSize = commandSize + payloadSize;
-    uint8_t buffer[bufferSize] = {0xC0, 0x00, payloadSize};
+    uint8_t buffer[commandSize] = {0xC0, 0x00, configSize};
+    Config config;
 
     loRaSerial.write(buffer, commandSize);
-    loRaSerial.write(defaultConfig, payloadSize);
-    loRaSerial.readBytes(buffer, bufferSize);
+    loRaSerial.write(defaultConfig, configSize);
 
-    waitModuleTask();
+    loRaSerial.readBytes(buffer, commandSize);
+    loRaSerial.readBytes(config, configSize);
+
+    waitLoRaTask();
     switchNormalMode();
 
     userOutput.println(" Done");
-    printModuleConfig(&buffer[commandSize], payloadSize);
+    printConfig(config);
 }
 
 
-void readModuleConfig() {
+void readLoRaConfig() {
     userOutput.print("Reading LoRa configuration...");
 
     switchConfigMode();
     flushExtraBytes();
 
-    const size_t bufferSize = commandSize + payloadSize;
-    uint8_t buffer[bufferSize] = {0xC1, 0x0, payloadSize};
+    uint8_t buffer[commandSize] = {0xC1, 0x0, configSize};
+    Config config;
 
     loRaSerial.write(buffer, commandSize);
-    loRaSerial.readBytes(buffer, bufferSize);
+    loRaSerial.readBytes(buffer, commandSize);
+    loRaSerial.readBytes(config, configSize);
 
-    waitModuleTask();
+    waitLoRaTask();
     switchNormalMode();
 
     userOutput.println(" Done");
 
-    const uint8_t *payload = &buffer[commandSize];
-
-    for (size_t i = 0; i < payloadSize; ++i) {
-        if (payload[i] != defaultConfig[i]) {
+    for (size_t i = 0; i < configSize; ++i) {
+        if (config[i] != defaultConfig[i]) {
             userOutput.println("Warning: LoRa is not configured properly");
             break;
         }
     }
 
-    printModuleConfig(payload, payloadSize);
+    printConfig(config);
 }

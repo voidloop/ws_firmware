@@ -1,7 +1,8 @@
 #ifndef MODULE_H
 #define MODULE_H
 
-void readModuleConfig();
-void writeModuleConfig();
+void readLoRaConfig();
+void writeLoRaConfig();
+void waitLoRaTask();
 
 #endif //MODULE_H
