@@ -1,11 +1,16 @@
 #include <Arduino.h>
 #include <BufferedOutput.h>
+#include <SafeStringReader.h>
 #include <SoftwareSerial.h>
 
 #include "config.h"
 
 extern BufferedOutput userOutput;
-extern SoftwareSerial loRaSerial;
+extern SafeStringReader loRaReader;
+extern BufferedOutput loRaOutput;
+
+SoftwareSerial loRaSerial(RX_PIN, TX_PIN);
+
 
 const size_t commandSize = 3;
 const size_t configSize = 6;
@@ -33,10 +38,7 @@ const Config defaultConfig = {
 
 
 void waitLoRaTask() {
-    // flush user output before start a potential endless loop
-//    userOutput.flush();
-
-    while (digitalRead(LORA_MODULE_AUX_PIN) == LOW);
+    while (digitalRead(AUX_PIN) == LOW);
     // Datasheet: the general recommendation is to detect the output state of the AUX
     // pin and switch after 2ms when the output is high.
     // Increase this delay if the LoRa module doesn't save or read the config correctly.
@@ -44,14 +46,14 @@ void waitLoRaTask() {
 }
 
 void switchConfigMode() {
-    digitalWrite(LORA_MODULE_M0_PIN, HIGH);
-    digitalWrite(LORA_MODULE_M1_PIN, HIGH);
+    digitalWrite(M0_PIN, HIGH);
+    digitalWrite(M1_PIN, HIGH);
     waitLoRaTask();
 }
 
 void switchNormalMode() {
-    digitalWrite(LORA_MODULE_M0_PIN, LOW);
-    digitalWrite(LORA_MODULE_M1_PIN, LOW);
+    digitalWrite(M0_PIN, LOW);
+    digitalWrite(M1_PIN, LOW);
     waitLoRaTask();
 }
 
@@ -76,6 +78,7 @@ void flushExtraBytes() {
 
 void writeLoRaConfig() {
     userOutput.print("Writing LoRa configuration...");
+    userOutput.flush();
 
     switchConfigMode();
     flushExtraBytes();
@@ -94,11 +97,13 @@ void writeLoRaConfig() {
 
     userOutput.println(" Done");
     printConfig(config);
+    userOutput.flush();
 }
 
 
 void readLoRaConfig() {
     userOutput.print("Reading LoRa configuration...");
+    userOutput.flush();
 
     switchConfigMode();
     flushExtraBytes();
@@ -123,4 +128,13 @@ void readLoRaConfig() {
     }
 
     printConfig(config);
+    userOutput.flush();
+}
+
+void setupLoRa() {
+    loRaSerial.begin(9600);
+    loRaReader.connect(loRaSerial);
+    loRaOutput.connect(loRaSerial, 9600);
+    waitLoRaTask();
+    readLoRaConfig();
 }
