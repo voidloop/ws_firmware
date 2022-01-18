@@ -4,22 +4,15 @@
 #include <SoftwareSerial.h>
 
 #include "config.h"
+#include "LoRaModule.h"
 
 extern BufferedOutput userOutput;
 extern SafeStringReader loRaReader;
 extern BufferedOutput loRaOutput;
 
-SoftwareSerial loRaSerial(RX_PIN, TX_PIN);
+LoRaModule loRaModule(RX_PIN, TX_PIN, M0_PIN, M1_PIN, AUX_PIN);
 
-const size_t commandSize = 3;
-const size_t configSize = 6;
-
-using Config = uint8_t[configSize];
-
-#define CONFIG_BAUD_RATE 9600
-#define NORMAL_BAUD_RATE 9600
-
-const Config defaultConfig = {
+const LoRaModule::Config defaultConfig = {
         0x10, /* Address high byte */
         0x10, /* Address low byte */
 
@@ -38,30 +31,8 @@ const Config defaultConfig = {
 };
 
 
-void waitLoRaTask() {
-    while (digitalRead(AUX_PIN) == LOW);
-    // Datasheet: the general recommendation is to detect the output state of the AUX
-    // pin and switch after 2ms when the output is high.
-    // Increase this delay if the LoRa module doesn't save or read the config correctly.
-    delay(50);
-}
-
-void switchConfigMode() {
-    digitalWrite(M0_PIN, HIGH);
-    digitalWrite(M1_PIN, HIGH);
-    waitLoRaTask();
-    loRaSerial.begin(CONFIG_BAUD_RATE);
-}
-
-void switchNormalMode() {
-    digitalWrite(M0_PIN, LOW);
-    digitalWrite(M1_PIN, LOW);
-    waitLoRaTask();
-    loRaSerial.begin(NORMAL_BAUD_RATE);
-}
-
-void printConfig(const Config &config) {
-    for (size_t i = 0; i < configSize; ++i) {
+void printConfig(const LoRaModule::Config &config) {
+    for (size_t i = 0; i < LoRaModule::configSize; ++i) {
         if (i > 0) {
             userOutput.print(' ');
         }
@@ -71,34 +42,12 @@ void printConfig(const Config &config) {
     userOutput.println();
 }
 
-void discardExtraBytes() {
-    while (loRaSerial.available()) {
-        uint8_t c = loRaSerial.read();
-        userOutput.print("Error: Extra byte received: ");
-        userOutput.println(c, HEX);
-    }
-}
-
 void writeLoRaConfig() {
     userOutput.println("Writing LoRa configuration...");
     userOutput.flush();
 
-    switchConfigMode();
-    discardExtraBytes();
-
-    uint8_t buffer[commandSize] = {0xC0, 0x00, configSize};
-    Config config;
-
-    loRaSerial.write(buffer, commandSize);
-    loRaSerial.write(defaultConfig, configSize);
-
-    loRaSerial.readBytes(buffer, commandSize);
-    loRaSerial.readBytes(config, configSize);
-
-    waitLoRaTask();
-    switchNormalMode();
-
-    printConfig(config);
+    loRaModule.setConfig(defaultConfig);
+    printConfig(defaultConfig);
 
     userOutput.println("Done.");
     userOutput.flush();
@@ -108,48 +57,19 @@ void readLoRaConfig() {
     userOutput.println("Reading LoRa configuration...");
     userOutput.flush();
 
-    switchConfigMode();
-    discardExtraBytes();
-
-    const uint8_t command[commandSize] = {0xC1, 0x0, configSize};
-    uint8_t response[commandSize];
-    Config config;
-
-    bool isOk = true;
-    loRaSerial.write(command, commandSize);
-    loRaSerial.readBytes(response, commandSize);
-
-    for (size_t i = 0; i < commandSize; ++i) {
-        if (command[i] != response[i]) {
-            isOk = false;
-            break;
-        }
-    }
-
-    if (isOk) {
-        loRaSerial.readBytes(config, configSize);
-        for (size_t i = 0; i < configSize; ++i) {
-            if (config[i] != defaultConfig[i]) {
-                userOutput.println("Warning: LoRa is not configured properly");
-                break;
-            }
-        }
-        printConfig(config);
-    } else {
-        userOutput.println("Error: Cannot read LoRa config");
-    }
-
-    waitLoRaTask();
-    switchNormalMode();
+    LoRaModule::Config config;
+    loRaModule.getConfig(config);
+    printConfig(config);
 
     userOutput.println("Done.");
     userOutput.flush();
 }
 
+
 void beginLoRa() {
-    loRaSerial.begin(NORMAL_BAUD_RATE);
-    loRaReader.connect(loRaSerial);
-    loRaOutput.connect(loRaSerial, NORMAL_BAUD_RATE);
-    waitLoRaTask();
+    loRaModule.begin();
+    loRaReader.connect(loRaModule);
+    loRaOutput.connect(loRaModule, 9600);
     readLoRaConfig();
+    loRaModule.fixedMode();
 }

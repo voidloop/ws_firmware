@@ -15,9 +15,6 @@ createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
 
 
 void setup() {
-    pinMode(M0_PIN, OUTPUT);
-    pinMode(M1_PIN, OUTPUT);
-    pinMode(AUX_PIN, INPUT);
     pinMode(OE_PIN, OUTPUT);
     digitalWrite(OE_PIN, HIGH);
 
