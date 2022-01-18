@@ -7,9 +7,9 @@
 #include "config.h"
 #include "module.h"
 
+
 createSafeStringReader(userReader, 32, "\r\n")
 createBufferedOutput(userOutput, 66, DROP_UNTIL_EMPTY)
-
 createSafeStringReader(loRaReader, 32, "\r\n")
 createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
 
@@ -27,8 +27,9 @@ void setup() {
     userReader.connect(Serial);
     userOutput.connect(Serial);
 
-    setupLoRa();
+    beginLoRa();
 }
+
 
 void statusCommand(BufferedOutput &output) {
     StaticJsonDocument<100> doc;
@@ -37,13 +38,16 @@ void statusCommand(BufferedOutput &output) {
     output.println();
 }
 
+
 void userUnknownCommand() {
     userOutput.println("Error: Unknown command");
 }
 
+
 void loRaUnknownCommand() {
     loRaOutput.println(R"({"error":"Unknown command"})");
 }
+
 
 void handleUserMessage() {
     if (userReader.equalsIgnoreCase("check")) {
@@ -71,12 +75,9 @@ void handleLoRaMessage() {
         fn = loRaUnknownCommand;
     }
 
-    const uint8_t target[] = {0x01, 0x01, 0x17};
-    loRaOutput.write(target, 3);
     fn();
-    loRaOutput.flush();
-    waitLoRaTask();
 }
+
 
 void processInput(SafeStringReader &reader, void (&handler)()) {
     if (reader.read()) {
@@ -85,8 +86,14 @@ void processInput(SafeStringReader &reader, void (&handler)()) {
     }
 }
 
+
 void loop() {
+    if (digitalRead(AUX_PIN) == LOW) {
+        userOutput.print('.');
+    }
+
     userOutput.nextByteOut();
     processInput(userReader, handleUserMessage);
+    loRaOutput.nextByteOut();
     processInput(loRaReader, handleLoRaMessage);
 }

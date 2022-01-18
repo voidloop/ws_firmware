@@ -11,12 +11,13 @@ extern BufferedOutput loRaOutput;
 
 SoftwareSerial loRaSerial(RX_PIN, TX_PIN);
 
-
 const size_t commandSize = 3;
 const size_t configSize = 6;
 
 using Config = uint8_t[configSize];
 
+#define CONFIG_BAUD_RATE 9600
+#define NORMAL_BAUD_RATE 9600
 
 const Config defaultConfig = {
         0x10, /* Address high byte */
@@ -49,12 +50,14 @@ void switchConfigMode() {
     digitalWrite(M0_PIN, HIGH);
     digitalWrite(M1_PIN, HIGH);
     waitLoRaTask();
+    loRaSerial.begin(CONFIG_BAUD_RATE);
 }
 
 void switchNormalMode() {
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, LOW);
     waitLoRaTask();
+    loRaSerial.begin(NORMAL_BAUD_RATE);
 }
 
 void printConfig(const Config &config) {
@@ -68,7 +71,7 @@ void printConfig(const Config &config) {
     userOutput.println();
 }
 
-void flushExtraBytes() {
+void discardExtraBytes() {
     while (loRaSerial.available()) {
         uint8_t c = loRaSerial.read();
         userOutput.print("Error: Extra byte received: ");
@@ -77,11 +80,11 @@ void flushExtraBytes() {
 }
 
 void writeLoRaConfig() {
-    userOutput.print("Writing LoRa configuration...");
+    userOutput.println("Writing LoRa configuration...");
     userOutput.flush();
 
     switchConfigMode();
-    flushExtraBytes();
+    discardExtraBytes();
 
     uint8_t buffer[commandSize] = {0xC0, 0x00, configSize};
     Config config;
@@ -95,46 +98,58 @@ void writeLoRaConfig() {
     waitLoRaTask();
     switchNormalMode();
 
-    userOutput.println(" Done");
     printConfig(config);
+
+    userOutput.println("Done.");
     userOutput.flush();
 }
 
-
 void readLoRaConfig() {
-    userOutput.print("Reading LoRa configuration...");
+    userOutput.println("Reading LoRa configuration...");
     userOutput.flush();
 
     switchConfigMode();
-    flushExtraBytes();
+    discardExtraBytes();
 
-    uint8_t buffer[commandSize] = {0xC1, 0x0, configSize};
+    const uint8_t command[commandSize] = {0xC1, 0x0, configSize};
+    uint8_t response[commandSize];
     Config config;
 
-    loRaSerial.write(buffer, commandSize);
-    loRaSerial.readBytes(buffer, commandSize);
-    loRaSerial.readBytes(config, configSize);
+    bool isOk = true;
+    loRaSerial.write(command, commandSize);
+    loRaSerial.readBytes(response, commandSize);
 
-    waitLoRaTask();
-    switchNormalMode();
-
-    userOutput.println(" Done");
-
-    for (size_t i = 0; i < configSize; ++i) {
-        if (config[i] != defaultConfig[i]) {
-            userOutput.println("Warning: LoRa is not configured properly");
+    for (size_t i = 0; i < commandSize; ++i) {
+        if (command[i] != response[i]) {
+            isOk = false;
             break;
         }
     }
 
-    printConfig(config);
+    if (isOk) {
+        loRaSerial.readBytes(config, configSize);
+        for (size_t i = 0; i < configSize; ++i) {
+            if (config[i] != defaultConfig[i]) {
+                userOutput.println("Warning: LoRa is not configured properly");
+                break;
+            }
+        }
+        printConfig(config);
+    } else {
+        userOutput.println("Error: Cannot read LoRa config");
+    }
+
+    waitLoRaTask();
+    switchNormalMode();
+
+    userOutput.println("Done.");
     userOutput.flush();
 }
 
-void setupLoRa() {
-    loRaSerial.begin(9600);
+void beginLoRa() {
+    loRaSerial.begin(NORMAL_BAUD_RATE);
     loRaReader.connect(loRaSerial);
-    loRaOutput.connect(loRaSerial, 9600);
+    loRaOutput.connect(loRaSerial, NORMAL_BAUD_RATE);
     waitLoRaTask();
     readLoRaConfig();
 }
