@@ -37,45 +37,20 @@ const Config defaultConfig = {
 };
 
 SoftwareSerial serial(RX_PIN, TX_PIN);
-
-namespace LoRa {
-
-    volatile size_t byteWritten = 0;
-
-    void auxRisingIsr() { byteWritten = 0; }
-
-    size_t write(uint8_t data);
-
-    void writeTarget();
-
-    size_t internalWrite(uint8_t data);
-
-    bool setConfig(const Config &config);
-
-    bool getConfig(Config &config);
-
-    class FixedStream : public Stream {
-    public:
-        explicit FixedStream() : Stream() {}
-
-        int available() override { return serial.available(); }
-
-        int availableForWrite() override { return serial.availableForWrite(); }
-
-        size_t write(uint8_t data) override {
-            userOutput.println(byteWritten);
-            return LoRa::write(data);
-        }
-
-        int read() override { return serial.read(); }
-
-        int peek() override { return serial.peek(); }
-
-        void flush() override { return serial.flush(); }
-    };
-}
-
+volatile size_t byteWritten = 0;
 uint8_t target[TARGET_SIZE] = {0x01, 0x01, 0x17};
+
+void auxRisingIsr() { byteWritten = 0; }
+
+size_t write(uint8_t data);
+
+void writeTarget();
+
+size_t internalWrite(uint8_t data);
+
+bool setConfig(const Config &config);
+
+bool getConfig(Config &config);
 
 void waitTask();
 
@@ -83,6 +58,40 @@ void configMode();
 
 void normalMode();
 
+
+class FixedStream : public Stream {
+public:
+    explicit FixedStream() : Stream() {}
+
+    int available() override { return serial.available(); }
+
+    int availableForWrite() override { return serial.availableForWrite(); }
+
+    size_t write(uint8_t data) override {
+        // new packet only if there is enough space for data, o.w. wait
+        if (byteWritten % PACKET_SIZE == 0) {
+            if (BUFFER_SIZE + TARGET_SIZE + 1 > BUFFER_SIZE) {
+                waitTask();
+            }
+            writeTarget();
+            return internalWrite(data);
+        }
+
+        // module buffer overflow: wait and write target
+        if (byteWritten + 1 > BUFFER_SIZE) {
+            waitTask();
+            writeTarget();
+        }
+
+        return internalWrite(data);
+    }
+
+    int read() override { return serial.read(); }
+
+    int peek() override { return serial.peek(); }
+
+    void flush() override { return serial.flush(); }
+};
 
 void LoRa::begin() {
     userOutput.println("LoRa initialization started");
@@ -115,7 +124,6 @@ void printConfig(const Config &config) {
     userOutput.println();
 }
 
-
 void LoRa::syncConfig() {
     userOutput.println("Reading LoRa configuration...");
     userOutput.flush();
@@ -140,32 +148,13 @@ void LoRa::syncConfig() {
     normalMode();
 }
 
-size_t LoRa::write(uint8_t data) {
-    // new packet only if there is enough space for data, o.w. wait
-    if (byteWritten % PACKET_SIZE == 0) {
-        if (BUFFER_SIZE + TARGET_SIZE + 1 > BUFFER_SIZE) {
-            waitTask();
-        }
-        writeTarget();
-        return internalWrite(data);
-    }
-
-    // module buffer overflow: wait and write target
-    if (byteWritten + 1 > BUFFER_SIZE) {
-        waitTask();
-        writeTarget();
-    }
-
-    return internalWrite(data);
-}
-
-void LoRa::writeTarget() {
+void writeTarget() {
     for (uint8_t b: target) {
         internalWrite(b);
     }
 }
 
-size_t LoRa::internalWrite(uint8_t data) {
+size_t internalWrite(uint8_t data) {
     byteWritten++;
     return serial.write(data);
 }
@@ -190,7 +179,7 @@ void normalMode() {
     waitTask();
 }
 
-bool LoRa::setConfig(const Config &config) {
+bool setConfig(const Config &config) {
     configMode();
 
     serial.begin(9600);
@@ -210,7 +199,7 @@ bool LoRa::setConfig(const Config &config) {
     return true;
 }
 
-bool LoRa::getConfig(Config &config) {
+bool getConfig(Config &config) {
     uint8_t buffer[COMMAND_SIZE] = {0xC1, 0x0, CONFIG_SIZE};
     serial.write(buffer, COMMAND_SIZE);
     serial.readBytes(buffer, COMMAND_SIZE);
