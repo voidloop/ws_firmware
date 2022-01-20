@@ -3,8 +3,9 @@
 #include <SafeStringReader.h>
 #include <BufferedOutput.h>
 #include <ArduinoJson.h>
-#include "LoRa.h"
+
 #include "config.h"
+#include "LoRa.h"
 
 createSafeStringReader(userReader, 32, "\r\n")
 createBufferedOutput(userOutput, 66, DROP_UNTIL_EMPTY)
@@ -40,10 +41,8 @@ void loRaUnknownCommand() {
 }
 
 void handleUserMessage() {
-    if (userReader.equalsIgnoreCase("check")) {
-        //readLoRaConfig();
-    } else if (userReader.equalsIgnoreCase("init")) {
-        //writeLoRaConfig();
+    if (userReader.equalsIgnoreCase("sync")) {
+        LoRa::syncConfig();
     } else if (userReader.equalsIgnoreCase("status")) {
         statusCommand(userOutput);
     } else {
@@ -57,7 +56,8 @@ void handleLoRaMessage() {
     userOutput.println("'");
 
     if (loRaReader.equalsIgnoreCase("status")) {
-        statusCommand(loRaOutput);
+        for (int x = 0; x < 100; ++x)
+            statusCommand(loRaOutput);
     } else {
         loRaUnknownCommand();
     }

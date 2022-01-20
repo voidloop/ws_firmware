@@ -12,23 +12,22 @@ extern BufferedOutput loRaOutput;
 #define CONFIG_SIZE 6
 #define TARGET_SIZE 3
 #define COMMAND_SIZE 3
-
 #define BUFFER_SIZE 400
 #define PACKET_SIZE 200
 
 using Config = uint8_t[CONFIG_SIZE];
 
 const Config defaultConfig = {
-        0x10, /* Address high byte */
-        0x10, /* Address low byte */
+        LOCAL_ADDRH, /* Address high byte */
+        LOCAL_ADDRL, /* Address low byte */
 
         0x62, /* UART: 9600,8,N,1 */
 
-        0x00, /* Sub-Packet setting: 200 bytes
+        0x00, /* Sub-Packet setting: 200 bytes (PACKET_SIZE)
                * RSSI ambient noise: disable
                * Transmitting power: 22 dBm */
 
-        0x17, /* Channel: 873.125 MHz */
+        LOCAL_CH,   /* Channel: 873.125 MHz */
 
         0x63, /* RSSI byte: disable
                * Transmission method: fixed
@@ -38,7 +37,6 @@ const Config defaultConfig = {
 
 SoftwareSerial serial(RX_PIN, TX_PIN);
 volatile size_t byteWritten = 0;
-uint8_t target[TARGET_SIZE] = {0x01, 0x01, 0x17};
 
 void auxRisingIsr() { byteWritten = 0; }
 
@@ -46,11 +44,11 @@ size_t write(uint8_t data);
 
 void writeTarget();
 
-size_t internalWrite(uint8_t data);
+size_t writeByte(uint8_t data);
 
-bool setConfig(const Config &config);
+bool writeConfig(const Config &config);
 
-bool getConfig(Config &config);
+bool readConfig(Config &config);
 
 void waitTask();
 
@@ -58,33 +56,32 @@ void configMode();
 
 void normalMode();
 
+//void printConfig(const Config &config);
 
 class FixedStream : public Stream {
 public:
     explicit FixedStream() : Stream() {}
 
-    int available() override { return serial.available(); }
-
-    int availableForWrite() override { return serial.availableForWrite(); }
-
     size_t write(uint8_t data) override {
         // new packet only if there is enough space for data, o.w. wait
         if (byteWritten % PACKET_SIZE == 0) {
-            if (BUFFER_SIZE + TARGET_SIZE + 1 > BUFFER_SIZE) {
+            if (byteWritten + TARGET_SIZE + 1 > BUFFER_SIZE) {
                 waitTask();
             }
             writeTarget();
-            return internalWrite(data);
+            return writeByte(data);
         }
-
         // module buffer overflow: wait and write target
         if (byteWritten + 1 > BUFFER_SIZE) {
             waitTask();
             writeTarget();
         }
-
-        return internalWrite(data);
+        return writeByte(data);
     }
+
+    int available() override { return serial.available(); }
+
+    int availableForWrite() override { return serial.availableForWrite(); }
 
     int read() override { return serial.read(); }
 
@@ -113,33 +110,23 @@ void LoRa::begin() {
     userOutput.flush();
 }
 
-void printConfig(const Config &config) {
-    for (size_t i = 0; i < CONFIG_SIZE; ++i) {
-        if (i > 0) {
-            userOutput.print(' ');
-        }
-        userOutput.print("0x");
-        userOutput.print(config[i], HEX);
-    }
-    userOutput.println();
-}
-
 void LoRa::syncConfig() {
     userOutput.println("Reading LoRa configuration...");
     userOutput.flush();
+
     configMode();
     serial.begin(9600);
 
     Config config;
-    getConfig(config);
-    printConfig(config);
+    readConfig(config);
     waitTask();
+    //printConfig(config);
 
     for (size_t i = 0; i < CONFIG_SIZE; ++i) {
         if (config[i] != defaultConfig[i]) {
             userOutput.println("Warning: the module is misconfigured, reconfiguring...");
             userOutput.flush();
-            setConfig(defaultConfig);
+            writeConfig(defaultConfig);
             waitTask();
             break;
         }
@@ -148,13 +135,24 @@ void LoRa::syncConfig() {
     normalMode();
 }
 
+//void printConfig(const Config &config) {
+//    for (size_t i = 0; i < CONFIG_SIZE; ++i) {
+//        if (i > 0) {
+//            userOutput.print(' ');
+//        }
+//        userOutput.print("0x");
+//        userOutput.print(config[i], HEX);
+//    }
+//    userOutput.println();
+//}
+
 void writeTarget() {
-    for (uint8_t b: target) {
-        internalWrite(b);
-    }
+    writeByte(TARGET_ADDRH);
+    writeByte(TARGET_ADDRL);
+    writeByte(TARGET_CH);
 }
 
-size_t internalWrite(uint8_t data) {
+size_t writeByte(uint8_t data) {
     byteWritten++;
     return serial.write(data);
 }
@@ -164,7 +162,7 @@ void waitTask() {
     // Datasheet: the general recommendation is to detect the output state of the AUX
     // pin and switch after 2ms when the output is high.
     // Increase this delay if the LoRa module doesn't save or read the config correctly.
-    delay(50);
+    delay(100);
 }
 
 void configMode() {
@@ -179,31 +177,37 @@ void normalMode() {
     waitTask();
 }
 
-bool setConfig(const Config &config) {
-    configMode();
+bool isBadResponse(const uint8_t buffer[COMMAND_SIZE]) {
+    if (buffer[0] == 0xFF && buffer[1] == 0xFF && buffer[2] == 0xFF) {
+        return true;
+    }
+    return false;
+}
 
-    serial.begin(9600);
-
-    uint8_t buffer[COMMAND_SIZE] = {0xC0, 0x00, COMMAND_SIZE};
-    Config response;
-
+bool writeConfig(const Config &config) {
+    uint8_t buffer[COMMAND_SIZE] = {0xC0, 0x00, CONFIG_SIZE};
     serial.write(buffer, COMMAND_SIZE);
     serial.write(config, CONFIG_SIZE);
 
     serial.readBytes(buffer, COMMAND_SIZE);
-    serial.readBytes(response, CONFIG_SIZE);
+    if (isBadResponse(buffer)) {
+        return false;
+    }
 
-    waitTask();
-    normalMode();
-
+    Config tmp;
+    serial.readBytes(tmp, CONFIG_SIZE);
     return true;
 }
 
-bool getConfig(Config &config) {
+bool readConfig(Config &config) {
     uint8_t buffer[COMMAND_SIZE] = {0xC1, 0x0, CONFIG_SIZE};
     serial.write(buffer, COMMAND_SIZE);
+
     serial.readBytes(buffer, COMMAND_SIZE);
+    if (isBadResponse(buffer)) {
+        return false;
+    }
+
     serial.readBytes(config, CONFIG_SIZE);
     return true;
 }
-
