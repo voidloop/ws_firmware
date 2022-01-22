@@ -7,12 +7,15 @@
 #include "config.h"
 #include "LoRa.h"
 
+using namespace LoRa;
+
 createSafeStringReader(userReader, 32, "\r\n")
 createBufferedOutput(userOutput, 66, DROP_UNTIL_EMPTY)
 createSafeStringReader(loRaReader, 32, "\r\n")
 createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
 
 void setup() {
+    pinMode(WIND_SPEED_PIN, INPUT);
     pinMode(OE_PIN, OUTPUT);
     digitalWrite(OE_PIN, HIGH);
 
@@ -27,7 +30,7 @@ void setup() {
 
 void statusCommand(BufferedOutput &output) {
     StaticJsonDocument<100> doc;
-    doc["hello"] = "world";
+    doc["wind_speed"] = analogRead(WIND_SPEED_PIN);
     serializeJson(doc, output);
     output.println();
 }
@@ -56,7 +59,11 @@ void handleLoRaMessage() {
     userOutput.println("'");
 
     if (loRaReader.equalsIgnoreCase("status")) {
+        normalMode();
         statusCommand(loRaOutput);
+        loRaOutput.flush();
+        waitTask();
+        recvMode();
     } else {
         loRaUnknownCommand();
     }

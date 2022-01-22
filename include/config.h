@@ -16,4 +16,6 @@
 #define TARGET_ADDRL 0x01
 #define TARGET_CH 0x17
 
+#define WIND_SPEED_PIN A0
+
 #endif // CONFIG_H

@@ -12,7 +12,7 @@ extern SafeStringReader loRaReader;
 extern BufferedOutput loRaOutput;
 
 #define CONFIG_BAUD_RATE 9600
-#define NORMAL_BAUD_RATE 9600
+#define OP_BAUD_RATE 9600
 #define CONFIG_SIZE 6
 #define TARGET_SIZE 3
 #define COMMAND_SIZE 3
@@ -50,11 +50,6 @@ bool writeConfig(const Config &config);
 
 bool readConfig(Config &config);
 
-void waitTask();
-
-void configMode();
-
-void normalMode();
 
 //void printConfig(const Config &config);
 
@@ -84,6 +79,7 @@ void LoRa::syncConfig() {
     userOutput.flush();
 
     configMode();
+    serial.begin(CONFIG_BAUD_RATE);
 
     Config config;
     readConfig(config);
@@ -100,7 +96,8 @@ void LoRa::syncConfig() {
         }
     }
 
-    normalMode();
+    recvMode();
+    serial.begin(OP_BAUD_RATE);
     userOutput.println("LoRa is ready.");
 }
 
@@ -115,7 +112,7 @@ void LoRa::syncConfig() {
 //    userOutput.println();
 //}
 
-void waitTask() {
+void LoRa::waitTask() {
     while (digitalRead(AUX_PIN) == LOW);
     // Datasheet: the general recommendation is to detect the output state of the AUX
     // pin and switch after 2ms when the output is high.
@@ -123,17 +120,23 @@ void waitTask() {
     delay(100);
 }
 
-void configMode() {
-    serial.begin(CONFIG_BAUD_RATE);
+void LoRa::configMode() {
     digitalWrite(M0_PIN, HIGH);
     digitalWrite(M1_PIN, HIGH);
     waitTask();
 }
 
-void normalMode() {
-    serial.begin(NORMAL_BAUD_RATE);
+void LoRa::normalMode() {
+    serial.begin(OP_BAUD_RATE);
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, LOW);
+    waitTask();
+}
+
+void LoRa::recvMode() {
+    serial.begin(OP_BAUD_RATE);
+    digitalWrite(M0_PIN, LOW);
+    digitalWrite(M1_PIN, HIGH);
     waitTask();
 }
 
