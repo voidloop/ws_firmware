@@ -2,8 +2,10 @@
 #include <BufferedOutput.h>
 #include <SafeStringReader.h>
 #include <SoftwareSerial.h>
+#include <util/atomic.h>
 #include "config.h"
 #include "LoRa.h"
+#include "LoRaStream.h"
 
 extern BufferedOutput userOutput;
 extern SafeStringReader loRaReader;
@@ -11,7 +13,6 @@ extern BufferedOutput loRaOutput;
 
 #define CONFIG_BAUD_RATE 9600
 #define NORMAL_BAUD_RATE 9600
-
 #define CONFIG_SIZE 6
 #define TARGET_SIZE 3
 #define COMMAND_SIZE 3
@@ -38,14 +39,12 @@ const Config defaultConfig = {
                * WOR cycle: 1500 ms */
 };
 
-SoftwareSerial serial(RX_PIN, TX_PIN);
-volatile size_t byteWritten = 0;
+namespace LoRa {
+    SoftwareSerial serial(RX_PIN, TX_PIN);
+    volatile size_t byteWritten = 0;
+}
 
-size_t write(uint8_t data);
-
-void writeTarget();
-
-size_t writeByte(uint8_t data);
+using namespace LoRa;
 
 bool writeConfig(const Config &config);
 
@@ -59,38 +58,6 @@ void normalMode();
 
 //void printConfig(const Config &config);
 
-class FixedStream : public Stream {
-public:
-    explicit FixedStream() : Stream() {}
-
-    size_t write(uint8_t data) override {
-        // new packet only if there is enough space for data, o.w. wait
-        if (byteWritten % PACKET_SIZE == 0) {
-            if (byteWritten + TARGET_SIZE + 1 > BUFFER_SIZE) {
-                waitTask();
-            }
-            writeTarget();
-            return writeByte(data);
-        }
-        // module buffer overflow: wait and write target
-        if (byteWritten + 1 > BUFFER_SIZE) {
-            waitTask();
-            writeTarget();
-        }
-        return writeByte(data);
-    }
-
-    int available() override { return serial.available(); }
-
-    int availableForWrite() override { return serial.availableForWrite(); }
-
-    int read() override { return serial.read(); }
-
-    int peek() override { return serial.peek(); }
-
-    void flush() override { return serial.flush(); }
-};
-
 void LoRa::begin() {
     userOutput.println("LoRa initialization started");
     userOutput.flush();
@@ -101,15 +68,14 @@ void LoRa::begin() {
 
     syncConfig();
 
-    static FixedStream fixedStream;
+    static LoRaStream stream;
     loRaReader.connect(serial);
-    loRaOutput.connect(fixedStream, 9600);
+    loRaOutput.connect(stream, 9600);
 
     attachInterrupt(digitalPinToInterrupt(AUX_PIN), [] {
         byteWritten = 0;
     }, RISING);
 
-    userOutput.println("LoRa is ready");
     userOutput.flush();
 }
 
@@ -135,6 +101,7 @@ void LoRa::syncConfig() {
     }
 
     normalMode();
+    userOutput.println("LoRa is ready.");
 }
 
 //void printConfig(const Config &config) {
@@ -147,17 +114,6 @@ void LoRa::syncConfig() {
 //    }
 //    userOutput.println();
 //}
-
-void writeTarget() {
-    writeByte(TARGET_ADDRH);
-    writeByte(TARGET_ADDRL);
-    writeByte(TARGET_CH);
-}
-
-size_t writeByte(uint8_t data) {
-    byteWritten++;
-    return serial.write(data);
-}
 
 void waitTask() {
     while (digitalRead(AUX_PIN) == LOW);
@@ -214,4 +170,59 @@ bool readConfig(Config &config) {
 
     serial.readBytes(config, CONFIG_SIZE);
     return true;
+}
+
+//-----------------------------------------------------------------------------
+// LoRaStream implementation
+//-----------------------------------------------------------------------------
+
+void writeByte(uint8_t data) {
+    byteWritten++;
+    serial.write(data);
+}
+
+
+size_t writeTarget() {
+    writeByte(TARGET_ADDRH);
+    writeByte(TARGET_ADDRL);
+    writeByte(TARGET_CH);
+    return TARGET_SIZE;
+}
+
+size_t LoRaStream::write(uint8_t data) {
+    if (byteWritten % PACKET_SIZE == 0) {
+        userOutput.println("new packet");
+        // wait if there is no enough space in the buffer
+        if (byteWritten + TARGET_SIZE + 1 > BUFFER_SIZE) {
+            waitTask();
+        }
+        writeTarget();
+    } else if (byteWritten + 1 > BUFFER_SIZE) {
+        userOutput.println("buffer overflow");
+        waitTask();
+        writeTarget();
+    }
+    writeByte(data);
+    userOutput.println(byteWritten);
+    return 1;
+}
+
+void LoRaStream::flush() {
+    return serial.flush();
+}
+
+int LoRaStream::peek() {
+    return serial.peek();
+}
+
+int LoRaStream::read() {
+    return serial.read();
+}
+
+int LoRaStream::availableForWrite() {
+    return serial.availableForWrite();
+}
+
+int LoRaStream::available() {
+    return serial.available();
 }

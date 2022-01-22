@@ -46,7 +46,21 @@ void handleUserMessage() {
     } else if (userReader.equalsIgnoreCase("status")) {
         statusCommand(userOutput);
     } else {
-        userUnknownCommand();
+        int count;
+        userReader.toInt(count);
+
+        userOutput.print(">>>>> ");
+        userOutput.print(count);
+        userOutput.println(" <<<<<");
+
+        for (int i = 0; i<count; ++i) {
+                //statusCommand(loRaOutput);
+                loRaOutput.println(i);
+        }
+
+        //loRaOutput.flush();
+
+        //userUnknownCommand();
     }
 }
 
@@ -56,7 +70,10 @@ void handleLoRaMessage() {
     userOutput.println("'");
 
     if (loRaReader.equalsIgnoreCase("status")) {
-        statusCommand(loRaOutput);
+        for (int i = 0; i<40; ++i) {
+            //statusCommand(loRaOutput);
+            loRaOutput.println(i);
+        }
     } else {
         loRaUnknownCommand();
     }
