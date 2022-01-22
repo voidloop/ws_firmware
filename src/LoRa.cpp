@@ -176,34 +176,34 @@ bool readConfig(Config &config) {
 // LoRaStream implementation
 //-----------------------------------------------------------------------------
 
-void writeByte(uint8_t data) {
-    byteWritten++;
-    serial.write(data);
-}
-
-
 size_t writeTarget() {
-    writeByte(TARGET_ADDRH);
-    writeByte(TARGET_ADDRL);
-    writeByte(TARGET_CH);
+    serial.write(TARGET_ADDRH);
+    serial.write(TARGET_ADDRL);
+    serial.write(TARGET_CH);
     return TARGET_SIZE;
 }
 
 size_t LoRaStream::write(uint8_t data) {
-    if (byteWritten % PACKET_SIZE == 0) {
-        userOutput.println("new packet");
+    noInterrupts();
+    const size_t written = byteWritten;
+    interrupts();
+
+    size_t count = 0;
+    if (written % PACKET_SIZE == 0) {
         // wait if there is no enough space in the buffer
-        if (byteWritten + TARGET_SIZE + 1 > BUFFER_SIZE) {
+        if (written + TARGET_SIZE + 1 >= BUFFER_SIZE) {
             waitTask();
         }
-        writeTarget();
-    } else if (byteWritten + 1 > BUFFER_SIZE) {
-        userOutput.println("buffer overflow");
+        count = writeTarget();
+    } else if (written >= BUFFER_SIZE) {
         waitTask();
-        writeTarget();
+        count = writeTarget();
     }
-    writeByte(data);
-    userOutput.println(byteWritten);
+    serial.write(data);
+
+    noInterrupts();
+    byteWritten += count + 1;
+    interrupts();
     return 1;
 }
 
