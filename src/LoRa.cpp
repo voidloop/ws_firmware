@@ -9,6 +9,9 @@ extern BufferedOutput userOutput;
 extern SafeStringReader loRaReader;
 extern BufferedOutput loRaOutput;
 
+#define CONFIG_BAUD_RATE 9600
+#define NORMAL_BAUD_RATE 9600
+
 #define CONFIG_SIZE 6
 #define TARGET_SIZE 3
 #define COMMAND_SIZE 3
@@ -37,8 +40,6 @@ const Config defaultConfig = {
 
 SoftwareSerial serial(RX_PIN, TX_PIN);
 volatile size_t byteWritten = 0;
-
-void auxRisingIsr() { byteWritten = 0; }
 
 size_t write(uint8_t data);
 
@@ -104,7 +105,9 @@ void LoRa::begin() {
     loRaReader.connect(serial);
     loRaOutput.connect(fixedStream, 9600);
 
-    attachInterrupt(digitalPinToInterrupt(AUX_PIN), auxRisingIsr, RISING);
+    attachInterrupt(digitalPinToInterrupt(AUX_PIN), [] {
+        byteWritten = 0;
+    }, RISING);
 
     userOutput.println("LoRa is ready");
     userOutput.flush();
@@ -115,7 +118,6 @@ void LoRa::syncConfig() {
     userOutput.flush();
 
     configMode();
-    serial.begin(9600);
 
     Config config;
     readConfig(config);
@@ -166,12 +168,14 @@ void waitTask() {
 }
 
 void configMode() {
+    serial.begin(CONFIG_BAUD_RATE);
     digitalWrite(M0_PIN, HIGH);
     digitalWrite(M1_PIN, HIGH);
     waitTask();
 }
 
 void normalMode() {
+    serial.begin(NORMAL_BAUD_RATE);
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, LOW);
     waitTask();

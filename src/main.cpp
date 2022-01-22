@@ -56,8 +56,7 @@ void handleLoRaMessage() {
     userOutput.println("'");
 
     if (loRaReader.equalsIgnoreCase("status")) {
-        for (int x = 0; x < 100; ++x)
-            statusCommand(loRaOutput);
+        statusCommand(loRaOutput);
     } else {
         loRaUnknownCommand();
     }
