@@ -16,8 +16,6 @@ createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
 
 void setup() {
     pinMode(WIND_SPEED_PIN, INPUT);
-    pinMode(OE_PIN, OUTPUT);
-    digitalWrite(OE_PIN, HIGH);
 
     Serial.begin(115200);
     SafeString::setOutput(Serial); // DEBUG
@@ -36,7 +34,7 @@ void statusCommand(BufferedOutput &output) {
 }
 
 void userUnknownCommand() {
-    userOutput.println("Error: Unknown command");
+    userOutput.println("Unknown command");
 }
 
 void loRaUnknownCommand() {

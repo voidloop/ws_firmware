@@ -12,7 +12,7 @@ extern SafeStringReader loRaReader;
 extern BufferedOutput loRaOutput;
 
 #define CONFIG_BAUD_RATE 9600
-#define OP_BAUD_RATE 9600
+#define NORMAL_BAUD_RATE 9600
 #define CONFIG_SIZE 6
 #define TARGET_SIZE 3
 #define COMMAND_SIZE 3
@@ -82,23 +82,31 @@ void LoRa::syncConfig() {
     serial.begin(CONFIG_BAUD_RATE);
 
     Config config;
-    readConfig(config);
+    if (!readConfig(config)) {
+        goto error;
+    }
     waitTask();
     //printConfig(config);
 
     for (size_t i = 0; i < CONFIG_SIZE; ++i) {
         if (config[i] != defaultConfig[i]) {
-            userOutput.println("Warning: the module is misconfigured, reconfiguring...");
+            userOutput.println("LoRa is not configured, writing config...");
             userOutput.flush();
-            writeConfig(defaultConfig);
+            if (!writeConfig(defaultConfig)) {
+                goto error;
+            }
             waitTask();
             break;
         }
     }
 
     recvMode();
-    serial.begin(OP_BAUD_RATE);
-    userOutput.println("LoRa is ready.");
+    serial.begin(NORMAL_BAUD_RATE);
+    userOutput.println("LoRa is ready");
+    return;
+
+    error:
+    userOutput.println("Serial error!");
 }
 
 //void printConfig(const Config &config) {
@@ -127,14 +135,14 @@ void LoRa::configMode() {
 }
 
 void LoRa::normalMode() {
-    serial.begin(OP_BAUD_RATE);
+    serial.begin(NORMAL_BAUD_RATE);
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, LOW);
     waitTask();
 }
 
 void LoRa::recvMode() {
-    serial.begin(OP_BAUD_RATE);
+    serial.begin(NORMAL_BAUD_RATE);
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, HIGH);
     waitTask();

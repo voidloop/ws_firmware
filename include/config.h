@@ -2,11 +2,10 @@
 #define CONFIG_H
 
 #define AUX_PIN 2
-#define M0_PIN 10
-#define M1_PIN 11
-#define OE_PIN 7
-#define RX_PIN 8
-#define TX_PIN 9
+#define M0_PIN 6
+#define M1_PIN 7
+#define RX_PIN 4
+#define TX_PIN 5
 
 #define LOCAL_ADDRH 0x10
 #define LOCAL_ADDRL 0x10
