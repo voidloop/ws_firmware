@@ -5,11 +5,11 @@
 #include <util/atomic.h>
 #include "config.h"
 #include "LoRa.h"
-#include "LoRaStream.h"
 
 extern BufferedOutput userOutput;
 extern SafeStringReader loRaReader;
 extern BufferedOutput loRaOutput;
+extern SoftwareSerial softwareSerial;
 
 #define CONFIG_BAUD_RATE 9600
 #define NORMAL_BAUD_RATE 9600
@@ -39,19 +39,54 @@ const Config defaultConfig = {
                * WOR cycle: 1500 ms */
 };
 
-namespace LoRa {
-    SoftwareSerial serial(RX_PIN, TX_PIN);
-    volatile size_t byteWritten = 0;
-}
-
 using namespace LoRa;
 
-bool writeConfig(const Config &config);
+volatile size_t byteWritten = 0;
 
-bool readConfig(Config &config);
+void printConfig(const Config &config) {
+    for (size_t i = 0; i < CONFIG_SIZE; ++i) {
+        if (i > 0) {
+            userOutput.print(' ');
+        }
+        userOutput.print("0x");
+        userOutput.print(config[i], HEX);
+    }
+    userOutput.println();
+}
 
+bool isBadResponse(const uint8_t buffer[COMMAND_SIZE]) {
+    if (buffer[0] == 0xFF && buffer[1] == 0xFF && buffer[2] == 0xFF) {
+        return true;
+    }
+    return false;
+}
 
-//void printConfig(const Config &config);
+bool writeConfig(const Config &config, Config &response) {
+    uint8_t buffer[COMMAND_SIZE] = {0xC0, 0x00, CONFIG_SIZE};
+    softwareSerial.write(buffer, COMMAND_SIZE);
+    softwareSerial.write(config, CONFIG_SIZE);
+
+    softwareSerial.readBytes(buffer, COMMAND_SIZE);
+    if (isBadResponse(buffer)) {
+        return false;
+    }
+
+    softwareSerial.readBytes(response, CONFIG_SIZE);
+    return true;
+}
+
+bool readConfig(Config &config) {
+    uint8_t buffer[COMMAND_SIZE] = {0xC1, 0x0, CONFIG_SIZE};
+    softwareSerial.write(buffer, COMMAND_SIZE);
+
+    softwareSerial.readBytes(buffer, COMMAND_SIZE);
+    if (isBadResponse(buffer)) {
+        return false;
+    }
+
+    softwareSerial.readBytes(config, CONFIG_SIZE);
+    return true;
+}
 
 void LoRa::begin() {
     userOutput.println("LoRa initialization started");
@@ -64,7 +99,7 @@ void LoRa::begin() {
     syncConfig();
 
     static LoRaStream stream;
-    loRaReader.connect(serial);
+    loRaReader.connect(softwareSerial);
     loRaOutput.connect(stream, 9600);
 
     attachInterrupt(digitalPinToInterrupt(AUX_PIN), [] {
@@ -74,51 +109,49 @@ void LoRa::begin() {
     userOutput.flush();
 }
 
+bool configsAreEqual(const Config &a, const Config &b) {
+    for (int i = 0; i < CONFIG_SIZE; ++i) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
 void LoRa::syncConfig() {
     userOutput.println("Reading LoRa configuration...");
     userOutput.flush();
 
     configMode();
-    serial.begin(CONFIG_BAUD_RATE);
+    softwareSerial.begin(CONFIG_BAUD_RATE);
 
-    Config config;
-    if (!readConfig(config)) {
-        goto error;
+    Config buffer;
+    if (!readConfig(buffer)) {
+        userOutput.println("Serial error!");
+        return;
     }
     waitTask();
-    //printConfig(config);
+    printConfig(buffer);
 
-    for (size_t i = 0; i < CONFIG_SIZE; ++i) {
-        if (config[i] != defaultConfig[i]) {
-            userOutput.println("LoRa is not configured, writing config...");
-            userOutput.flush();
-            if (!writeConfig(defaultConfig)) {
-                goto error;
-            }
-            waitTask();
-            break;
+    if (!configsAreEqual(defaultConfig, buffer)) {
+        userOutput.println("LoRa is not configured");
+        userOutput.println("Writing configuration...");
+        userOutput.flush();
+
+        if (!writeConfig(defaultConfig, buffer)) {
+            userOutput.println("Serial error!");
+            return;
+        }
+
+        waitTask();
+
+        if (!configsAreEqual(defaultConfig, buffer)) {
+            userOutput.println("Cannot write configuration!");
         }
     }
 
     recvMode();
-    serial.begin(NORMAL_BAUD_RATE);
+    softwareSerial.begin(NORMAL_BAUD_RATE);
     userOutput.println("LoRa is ready");
-    return;
-
-    error:
-    userOutput.println("Serial error!");
 }
-
-//void printConfig(const Config &config) {
-//    for (size_t i = 0; i < CONFIG_SIZE; ++i) {
-//        if (i > 0) {
-//            userOutput.print(' ');
-//        }
-//        userOutput.print("0x");
-//        userOutput.print(config[i], HEX);
-//    }
-//    userOutput.println();
-//}
 
 void LoRa::waitTask() {
     while (digitalRead(AUX_PIN) == LOW);
@@ -135,52 +168,17 @@ void LoRa::configMode() {
 }
 
 void LoRa::normalMode() {
-    serial.begin(NORMAL_BAUD_RATE);
+    softwareSerial.begin(NORMAL_BAUD_RATE);
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, LOW);
     waitTask();
 }
 
 void LoRa::recvMode() {
-    serial.begin(NORMAL_BAUD_RATE);
+    softwareSerial.begin(NORMAL_BAUD_RATE);
     digitalWrite(M0_PIN, LOW);
     digitalWrite(M1_PIN, HIGH);
     waitTask();
-}
-
-bool isBadResponse(const uint8_t buffer[COMMAND_SIZE]) {
-    if (buffer[0] == 0xFF && buffer[1] == 0xFF && buffer[2] == 0xFF) {
-        return true;
-    }
-    return false;
-}
-
-bool writeConfig(const Config &config) {
-    uint8_t buffer[COMMAND_SIZE] = {0xC0, 0x00, CONFIG_SIZE};
-    serial.write(buffer, COMMAND_SIZE);
-    serial.write(config, CONFIG_SIZE);
-
-    serial.readBytes(buffer, COMMAND_SIZE);
-    if (isBadResponse(buffer)) {
-        return false;
-    }
-
-    Config tmp;
-    serial.readBytes(tmp, CONFIG_SIZE);
-    return true;
-}
-
-bool readConfig(Config &config) {
-    uint8_t buffer[COMMAND_SIZE] = {0xC1, 0x0, CONFIG_SIZE};
-    serial.write(buffer, COMMAND_SIZE);
-
-    serial.readBytes(buffer, COMMAND_SIZE);
-    if (isBadResponse(buffer)) {
-        return false;
-    }
-
-    serial.readBytes(config, CONFIG_SIZE);
-    return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -188,9 +186,9 @@ bool readConfig(Config &config) {
 //-----------------------------------------------------------------------------
 
 size_t writeTarget() {
-    serial.write(TARGET_ADDRH);
-    serial.write(TARGET_ADDRL);
-    serial.write(TARGET_CH);
+    softwareSerial.write(TARGET_ADDRH);
+    softwareSerial.write(TARGET_ADDRL);
+    softwareSerial.write(TARGET_CH);
     return TARGET_SIZE;
 }
 
@@ -210,7 +208,7 @@ size_t LoRaStream::write(uint8_t data) {
         waitTask();
         count = writeTarget();
     }
-    serial.write(data);
+    softwareSerial.write(data);
 
     noInterrupts();
     byteWritten += count + 1;
@@ -219,21 +217,21 @@ size_t LoRaStream::write(uint8_t data) {
 }
 
 void LoRaStream::flush() {
-    return serial.flush();
+    return softwareSerial.flush();
 }
 
 int LoRaStream::peek() {
-    return serial.peek();
+    return softwareSerial.peek();
 }
 
 int LoRaStream::read() {
-    return serial.read();
+    return softwareSerial.read();
 }
 
 int LoRaStream::availableForWrite() {
-    return serial.availableForWrite();
+    return softwareSerial.availableForWrite();
 }
 
 int LoRaStream::available() {
-    return serial.available();
+    return softwareSerial.available();
 }

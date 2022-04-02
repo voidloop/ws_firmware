@@ -13,6 +13,7 @@ createSafeStringReader(userReader, 32, "\r\n")
 createBufferedOutput(userOutput, 66, DROP_UNTIL_EMPTY)
 createSafeStringReader(loRaReader, 32, "\r\n")
 createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
+SoftwareSerial softwareSerial(RX_PIN, TX_PIN);
 
 void setup() {
     pinMode(WIND_SPEED_PIN, INPUT);
