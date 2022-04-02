@@ -72,6 +72,8 @@ bool writeConfig(const Config &config, Config &response) {
     }
 
     softwareSerial.readBytes(response, CONFIG_SIZE);
+
+    waitTask();
     return true;
 }
 
@@ -85,6 +87,8 @@ bool readConfig(Config &config) {
     }
 
     softwareSerial.readBytes(config, CONFIG_SIZE);
+
+    waitTask();
     return true;
 }
 
@@ -100,7 +104,7 @@ void LoRa::begin() {
 
     static LoRaStream stream;
     loRaReader.connect(softwareSerial);
-    loRaOutput.connect(stream, 9600);
+    loRaOutput.connect(stream, NORMAL_BAUD_RATE);
 
     attachInterrupt(digitalPinToInterrupt(AUX_PIN), [] {
         byteWritten = 0;
@@ -121,14 +125,12 @@ void LoRa::syncConfig() {
     userOutput.flush();
 
     configMode();
-    softwareSerial.begin(CONFIG_BAUD_RATE);
 
     Config buffer;
     if (!readConfig(buffer)) {
         userOutput.println("Serial error!");
         return;
     }
-    waitTask();
     printConfig(buffer);
 
     if (!configsAreEqual(defaultConfig, buffer)) {
@@ -141,15 +143,12 @@ void LoRa::syncConfig() {
             return;
         }
 
-        waitTask();
-
         if (!configsAreEqual(defaultConfig, buffer)) {
             userOutput.println("Cannot write configuration!");
         }
     }
 
     recvMode();
-    softwareSerial.begin(NORMAL_BAUD_RATE);
     userOutput.println("LoRa is ready");
 }
 
@@ -162,6 +161,7 @@ void LoRa::waitTask() {
 }
 
 void LoRa::configMode() {
+    softwareSerial.begin(CONFIG_BAUD_RATE);
     digitalWrite(M0_PIN, HIGH);
     digitalWrite(M1_PIN, HIGH);
     waitTask();
