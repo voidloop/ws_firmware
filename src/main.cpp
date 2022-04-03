@@ -8,6 +8,7 @@
 constexpr byte START_BYTE = 0x80;
 constexpr byte STOP_BYTE = 0x7E;
 
+constexpr uint8_t interruptNum = digitalPinToInterrupt(AUX_PIN);
 extern LoRaStream loRaStream;
 uint16_t windSpeed = 0;
 
@@ -44,12 +45,10 @@ void sendData() {
     LoRa::waitTask();
 }
 
-constexpr uint8_t interruptNum = digitalPinToInterrupt(AUX_PIN);
-
-void wakeUp() {
+void wakeUpIsr() {
     sleep_disable();
     detachInterrupt(interruptNum);
-    attachInterrupt(interruptNum, LoRa::resetByteWritten, RISING);
+    attachInterrupt(interruptNum, LoRa::resetByteWrittenIsr, RISING);
 }
 
 void loop() {
@@ -57,7 +56,7 @@ void loop() {
     LoRa::recvMode();
     sleep_enable();
     detachInterrupt(interruptNum);
-    attachInterrupt(interruptNum, wakeUp, RISING);
+    attachInterrupt(interruptNum, wakeUpIsr, RISING);
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     digitalWrite(LED_BUILTIN, LOW);
     delay(1000);

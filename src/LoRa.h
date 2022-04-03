@@ -13,7 +13,7 @@ namespace LoRa {
 
     void recvMode();
 
-    void resetByteWritten();
+    void resetByteWrittenIsr();
 }
 
 class LoRaStream : public Stream {

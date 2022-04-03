@@ -39,7 +39,7 @@ LoRaStream loRaStream;
 
 volatile size_t byteWritten = 0;
 
-void LoRa::resetByteWritten() {
+void LoRa::resetByteWrittenIsr() {
     byteWritten = 0;
 }
 
@@ -92,6 +92,13 @@ bool readConfig(Config &config) {
     return true;
 }
 
+bool configEquals(const Config &a, const Config &b) {
+    for (int i = 0; i < CONFIG_SIZE; ++i) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
 void LoRa::begin() {
     Serial.println("LoRa initialization started");
 
@@ -104,17 +111,10 @@ void LoRa::begin() {
 
     syncConfig();
 
-    attachInterrupt(digitalPinToInterrupt(AUX_PIN), resetByteWritten, RISING);
+    attachInterrupt(digitalPinToInterrupt(AUX_PIN), resetByteWrittenIsr, RISING);
 
     recvMode();
     Serial.println("LoRa is ready");
-}
-
-bool configEquals(const Config &a, const Config &b) {
-    for (int i = 0; i < CONFIG_SIZE; ++i) {
-        if (a[i] != b[i]) return false;
-    }
-    return true;
 }
 
 void LoRa::syncConfig() {
