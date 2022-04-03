@@ -15,7 +15,6 @@ void setup() {
     pinMode(WIND_SPEED_PIN, INPUT);
     Serial.begin(115200);
     LoRa::begin();
-    LoRa::normalMode();
 }
 
 void flushInput() {
@@ -55,6 +54,7 @@ void wakeUp() {
 
 void loop() {
     Serial.println("Going to sleep...");
+    LoRa::recvMode();
     sleep_enable();
     detachInterrupt(interruptNum);
     attachInterrupt(interruptNum, wakeUp, RISING);
@@ -70,5 +70,4 @@ void loop() {
     flushInput();
     LoRa::normalMode();
     sendData();
-    LoRa::recvMode();
 }
