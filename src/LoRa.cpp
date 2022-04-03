@@ -1,15 +1,8 @@
 #include <Arduino.h>
-#include <BufferedOutput.h>
-#include <SafeStringReader.h>
 #include <SoftwareSerial.h>
 #include <util/atomic.h>
 #include "config.h"
 #include "LoRa.h"
-
-extern BufferedOutput userOutput;
-extern SafeStringReader loRaReader;
-extern BufferedOutput loRaOutput;
-extern SoftwareSerial softwareSerial;
 
 #define CONFIG_BAUD_RATE 9600
 #define NORMAL_BAUD_RATE 9600
@@ -41,17 +34,20 @@ const Config defaultConfig = {
 
 using namespace LoRa;
 
+SoftwareSerial softwareSerial(RX_PIN, TX_PIN);
+LoRaStream loRaStream;
+
 volatile size_t byteWritten = 0;
 
 void printConfig(const Config &config) {
     for (size_t i = 0; i < CONFIG_SIZE; ++i) {
         if (i > 0) {
-            userOutput.print(' ');
+            Serial.print(' ');
         }
-        userOutput.print("0x");
-        userOutput.print(config[i], HEX);
+        Serial.print("0x");
+        Serial.print(config[i], HEX);
     }
-    userOutput.println();
+    Serial.println();
 }
 
 bool isBadResponse(const uint8_t buffer[COMMAND_SIZE]) {
@@ -93,8 +89,10 @@ bool readConfig(Config &config) {
 }
 
 void LoRa::begin() {
-    userOutput.println("LoRa initialization started");
-    userOutput.flush();
+    Serial.println("LoRa initialization started");
+
+    softwareSerial.begin(NORMAL_BAUD_RATE);
+
     pinMode(AUX_PIN, INPUT);
     pinMode(M0_PIN, OUTPUT);
     pinMode(M1_PIN, OUTPUT);
@@ -102,15 +100,12 @@ void LoRa::begin() {
 
     syncConfig();
 
-    static LoRaStream stream;
-    loRaReader.connect(softwareSerial);
-    loRaOutput.connect(stream, NORMAL_BAUD_RATE);
-
     attachInterrupt(digitalPinToInterrupt(AUX_PIN), [] {
         byteWritten = 0;
     }, RISING);
 
-    userOutput.flush();
+    recvMode();
+    Serial.println("LoRa is ready");
 }
 
 bool configsAreEqual(const Config &a, const Config &b) {
@@ -121,35 +116,31 @@ bool configsAreEqual(const Config &a, const Config &b) {
 }
 
 void LoRa::syncConfig() {
-    userOutput.println("Reading LoRa configuration...");
-    userOutput.flush();
+    Serial.println("Reading LoRa configuration...");
 
     configMode();
 
     Config buffer;
     if (!readConfig(buffer)) {
-        userOutput.println("Serial error!");
+        Serial.println("Serial error!");
         return;
     }
     printConfig(buffer);
 
     if (!configsAreEqual(defaultConfig, buffer)) {
-        userOutput.println("LoRa is not configured");
-        userOutput.println("Writing configuration...");
-        userOutput.flush();
+        Serial.println("LoRa is not configured");
+        Serial.println("Writing configuration...");
 
         if (!writeConfig(defaultConfig, buffer)) {
-            userOutput.println("Serial error!");
+            Serial.println("Serial error!");
             return;
         }
 
         if (!configsAreEqual(defaultConfig, buffer)) {
-            userOutput.println("Cannot write configuration!");
+            Serial.println("Cannot write configuration!");
+            return;
         }
     }
-
-    recvMode();
-    userOutput.println("LoRa is ready");
 }
 
 void LoRa::waitTask() {
@@ -214,6 +205,10 @@ size_t LoRaStream::write(uint8_t data) {
     byteWritten += count + 1;
     interrupts();
     return 1;
+}
+
+size_t LoRaStream::write(const uint8_t *buffer, size_t size) {
+    return Stream::write(buffer, size);
 }
 
 void LoRaStream::flush() {

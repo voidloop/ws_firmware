@@ -17,6 +17,7 @@ namespace LoRa {
 class LoRaStream : public Stream {
 public:
     size_t write(uint8_t data) override;
+    size_t write(const uint8_t *buffer, size_t size) override;
 
     int available() override;
 

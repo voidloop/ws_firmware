@@ -1,83 +1,56 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
-#include <SafeStringReader.h>
-#include <BufferedOutput.h>
-#include <ArduinoJson.h>
-
 #include "config.h"
 #include "LoRa.h"
 
-using namespace LoRa;
+/* packet: 0x80 SPEED_H SPEED_L 0x7E */
+constexpr byte START_BYTE = 0x80;
+constexpr byte STOP_BYTE = 0x7E;
 
-createSafeStringReader(userReader, 32, "\r\n")
-createBufferedOutput(userOutput, 66, DROP_UNTIL_EMPTY)
-createSafeStringReader(loRaReader, 32, "\r\n")
-createBufferedOutput(loRaOutput, 66, BLOCK_IF_FULL)
-SoftwareSerial softwareSerial(RX_PIN, TX_PIN);
+extern LoRaStream loRaStream;
+uint16_t windSpeed = 0;
 
 void setup() {
     pinMode(WIND_SPEED_PIN, INPUT);
-
     Serial.begin(115200);
-    SafeString::setOutput(Serial); // DEBUG
-
-    userReader.connect(Serial);
-    userOutput.connect(Serial);
-
     LoRa::begin();
+    LoRa::normalMode();
 }
 
-void statusCommand(BufferedOutput &output) {
-    StaticJsonDocument<100> doc;
-    doc["wind_speed"] = analogRead(WIND_SPEED_PIN);
-    serializeJson(doc, output);
-    output.println();
-}
-
-void userUnknownCommand() {
-    userOutput.println("Unknown command");
-}
-
-void loRaUnknownCommand() {
-    loRaOutput.println(R"({"error":"Unknown command"})");
-}
-
-void handleUserMessage() {
-    if (userReader.equalsIgnoreCase("sync")) {
-        LoRa::syncConfig();
-    } else if (userReader.equalsIgnoreCase("status")) {
-        statusCommand(userOutput);
-    } else {
-        userUnknownCommand();
+void flushInput() {
+    size_t available = loRaStream.available();
+    while (true) {
+        if (available > 0) {
+            Serial.print(loRaStream.read());
+        } else {
+            break;
+        }
+        available = loRaStream.available();
     }
 }
 
-void handleLoRaMessage() {
-    userOutput.print("Message received: '");
-    userOutput.print(loRaReader);
-    userOutput.println("'");
-
-    if (loRaReader.equalsIgnoreCase("status")) {
-        normalMode();
-        statusCommand(loRaOutput);
-        loRaOutput.flush();
-        waitTask();
-        recvMode();
-    } else {
-        loRaUnknownCommand();
-    }
+void updateValues() {
+    windSpeed = analogRead(WIND_SPEED_PIN);
 }
 
-void processInput(SafeStringReader &reader, void (&handler)()) {
-    if (reader.read()) {
-        reader.trim();
-        handler();
-    }
+void sendData() {
+    uint8_t packet[4] = {START_BYTE, 0x00, 0x00, STOP_BYTE};
+    packet[1] = windSpeed >> 8;
+    packet[2] = windSpeed & 0x00FF;
+    size_t n = loRaStream.write(packet, sizeof packet);
+    Serial.print("Data sent (");
+    Serial.print(n);
+    Serial.println(" bytes)");
+}
+
+void handleWakeUp() {
+    Serial.print("Wake up signal received");
+    flushInput();
+    updateValues();
+    sendData();
 }
 
 void loop() {
-    userOutput.nextByteOut();
-    processInput(userReader, handleUserMessage);
-    loRaOutput.nextByteOut();
-    processInput(loRaReader, handleLoRaMessage);
+    sendData();
+    delay(1000);
 }
