@@ -110,7 +110,7 @@ void LoRa::begin() {
     Serial.println("LoRa is ready");
 }
 
-bool configsAreEqual(const Config &a, const Config &b) {
+bool configEquals(const Config &a, const Config &b) {
     for (int i = 0; i < CONFIG_SIZE; ++i) {
         if (a[i] != b[i]) return false;
     }
@@ -129,7 +129,7 @@ void LoRa::syncConfig() {
     }
     printConfig(buffer);
 
-    if (!configsAreEqual(defaultConfig, buffer)) {
+    if (!configEquals(defaultConfig, buffer)) {
         Serial.println("LoRa is not configured");
         Serial.println("Writing configuration...");
 
@@ -138,7 +138,7 @@ void LoRa::syncConfig() {
             return;
         }
 
-        if (!configsAreEqual(defaultConfig, buffer)) {
+        if (!configEquals(defaultConfig, buffer)) {
             Serial.println("Cannot write configuration!");
             return;
         }
