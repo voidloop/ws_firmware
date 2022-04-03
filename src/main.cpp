@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
+#include <avr/sleep.h>
 #include "config.h"
 #include "LoRa.h"
 
@@ -21,7 +22,7 @@ void flushInput() {
     size_t available = loRaStream.available();
     while (true) {
         if (available > 0) {
-            Serial.print(loRaStream.read());
+            loRaStream.read();
         } else {
             break;
         }
@@ -41,16 +42,33 @@ void sendData() {
     Serial.print("Data sent (");
     Serial.print(n);
     Serial.println(" bytes)");
+    LoRa::waitTask();
 }
 
-void handleWakeUp() {
-    Serial.print("Wake up signal received");
-    flushInput();
-    updateValues();
-    sendData();
+constexpr uint8_t interruptNum = digitalPinToInterrupt(AUX_PIN);
+
+void wakeUp() {
+    sleep_disable();
+    detachInterrupt(interruptNum);
+    attachInterrupt(interruptNum, LoRa::resetByteWritten, RISING);
 }
 
 void loop() {
-    sendData();
+    Serial.println("Going to sleep...");
+    sleep_enable();
+    detachInterrupt(interruptNum);
+    attachInterrupt(interruptNum, wakeUp, RISING);
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+    digitalWrite(LED_BUILTIN, LOW);
     delay(1000);
+    sleep_cpu();
+
+    Serial.println("Woke up!");
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
+    updateValues();
+    flushInput();
+    LoRa::normalMode();
+    sendData();
+    LoRa::recvMode();
 }

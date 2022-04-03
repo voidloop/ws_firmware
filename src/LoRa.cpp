@@ -39,6 +39,10 @@ LoRaStream loRaStream;
 
 volatile size_t byteWritten = 0;
 
+void LoRa::resetByteWritten() {
+    byteWritten = 0;
+}
+
 void printConfig(const Config &config) {
     for (size_t i = 0; i < CONFIG_SIZE; ++i) {
         if (i > 0) {
@@ -100,9 +104,7 @@ void LoRa::begin() {
 
     syncConfig();
 
-    attachInterrupt(digitalPinToInterrupt(AUX_PIN), [] {
-        byteWritten = 0;
-    }, RISING);
+    attachInterrupt(digitalPinToInterrupt(AUX_PIN), resetByteWritten, RISING);
 
     recvMode();
     Serial.println("LoRa is ready");
